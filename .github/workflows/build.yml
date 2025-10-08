@@ -34,6 +34,14 @@ jobs:
       - name: Export NDK path
         run: echo "ANDROID_NDK_ROOT=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
 
+      - name: Prepare deps (clone mpv)
+        run: |
+          mkdir -p buildscripts/deps
+          if [ ! -d buildscripts/deps/mpv ]; then
+            git clone https://github.com/mpv-player/mpv.git buildscripts/deps/mpv
+          fi
+          echo "✅ mpv source ready"
+
       - name: Initialize build folders
         run: |
           cd buildscripts
