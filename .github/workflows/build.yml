@@ -26,10 +26,11 @@ jobs:
       - name: Grant permission for Gradle
         run: chmod +x gradlew
 
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+      - name: Build Debug APK (with full logs)
+        run: ./gradlew assembleDebug --stacktrace --warning-mode all
 
-      - name: Upload APK artifact
+      - name: Upload APK artifact (if build succeeds)
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: mpv-android-debug
