@@ -1,75 +1,69 @@
-name: Build mpv-android (arm64-v8a full)
+name: Build mpv-android (arm64)
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
   workflow_dispatch:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: false  # we'll fetch them manually
+          submodules: recursive
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install build dependencies
+      - name: Set up environment
         run: |
-          sudo apt-get update
-          sudo apt-get install -y autoconf pkg-config libtool ninja-build python3-pip zip
-          sudo pip3 install meson
+          sudo apt update
+          sudo apt install -y git wget curl unzip python3 python3-pip ninja-build pkg-config libtool autoconf automake build-essential yasm meson
+          pip install meson==1.9.1
+          echo "✅ Environment ready"
 
-      # ⚡ Cache compiled native deps to speed up builds
-      - name: Cache native build outputs (prefix folder)
-        uses: actions/cache@v4
+      - name: Set up Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
         with:
-          path: buildscripts/prefix
-          key: ${{ runner.os }}-mpv-prefix-${{ hashFiles('buildscripts/include/depinfo.sh') }}
-          restore-keys: |
-            ${{ runner.os }}-mpv-prefix-
+          ndk-version: r26d
 
-      # 🧱 Fetch submodules (mpv, ffmpeg, libass, etc.)
-      - name: Initialize and update submodules (fetch deps like mpv, ffmpeg, libass)
+      - name: Export NDK path
+        run: echo "ANDROID_NDK_ROOT=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
+
+      - name: Initialize build folders
         run: |
-          git submodule update --init --recursive
-          ls -R buildscripts/deps || true
+          cd buildscripts
+          mkdir -p deps prefix
+          echo "✅ Build directories ready"
 
-      # 🔨 Build native libraries (libmpv, ffmpeg, libass)
-      - name: Build native libs (arm64)
+      - name: Build libmpv (arm64)
+        run: |
+          cd buildscripts
+          chmod +x buildall.sh
+          ./buildall.sh --arch arm64 mpv
+        env:
+          ANDROID_NDK: ${{ env.ANDROID_NDK_ROOT }}
+
+      - name: Build mpv-android APK
         run: |
           chmod +x buildscripts/buildall.sh
-          ./buildscripts/buildall.sh --arch arm64
+          ./buildscripts/buildall.sh --arch arm64 mpv-android
         env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+          ANDROID_NDK: ${{ env.ANDROID_NDK_ROOT }}
 
-      # 🧱 Build the final Android APK
-      - name: Build APK
+      - name: Verify build outputs
         run: |
-          chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace --warning-mode all
+          ls -lh app/build/outputs/apk/default/*/*.apk || true
+          ls -lh app/build/outputs/apk/api29/*/*.apk || true
 
-      # 📦 Package all built APKs
-      - name: Zip all APK outputs
-        run: |
-          cd app/build/outputs/apk
-          zip -r $GITHUB_WORKSPACE/mpv-apks.zip .
-          ls -lh $GITHUB_WORKSPACE/mpv-apks.zip
-
-      # ☁️ Upload the result
-      - name: Upload APK artifact
+      - name: Upload APKs as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mpv-android-arm64-full
-          path: mpv-apks.zip
+          name: mpv-android-builds
+          path: |
+            app/build/outputs/apk/**/**/*.apk
+            buildscripts/prefix/**
