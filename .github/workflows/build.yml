@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout code
+      # 1. Checkout your code
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -30,20 +30,23 @@ jobs:
       - name: Grant permission for Gradle
         run: chmod +x gradlew
 
-      # 5. Build Debug APKs for all ABIs (arm64-v8a included)
+      # 5. Build Debug APKs (all ABIs)
       - name: Build Debug APKs
         run: ./gradlew assembleDebug --stacktrace --warning-mode all
 
-      # 6. Zip all APKs into a single file
+      # 6. List all APKs (for verification)
+      - name: List all APKs
+        run: ls -R app/build/outputs/apk/
+
+      # 7. Zip all APKs into a single file in the repo root
       - name: Zip all APKs
         run: |
-          cd app/build/outputs/apk
-          zip -r ../../../mpv-apks.zip .
+          zip -r $GITHUB_WORKSPACE/mpv-apks.zip app/build/outputs/apk
 
-      # 7. Upload the ZIP
+      # 8. Upload the ZIP artifact
       - name: Upload all APKs ZIP
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: mpv-apks
-          path: mpv-apks.zip
+          path: $GITHUB_WORKSPACE/mpv-apks.zip
