@@ -754,7 +754,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
                 
                 holdRunnable = Runnable {
                     if (!isSpeedBoostActive && !isControlTapped(ev)) {
-                        originalSpeed = psc.speed
+                        originalSpeed = psc.speed.toDouble()
                         MPVLib.setPropertyDouble("speed", 2.0)
                         isSpeedBoostActive = true
                         isSpeedBoosted = true
