@@ -1,4 +1,4 @@
-name: Build mpv-android app
+name: Build mpv-android app (arm64-v8a)
 
 on:
   push:
@@ -26,12 +26,12 @@ jobs:
       - name: Grant permission for Gradle
         run: chmod +x gradlew
 
-      - name: Build Debug APK (with full logs)
-        run: ./gradlew assembleDebug --stacktrace --warning-mode all
+      - name: Build Debug APK (arm64-v8a)
+        run: ./gradlew assembleDebug -PabiFilter=arm64-v8a --stacktrace --warning-mode all
 
-      - name: Upload APK artifact (all flavors/ABIs)
+      - name: Upload arm64-v8a APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: mpv-android-debug
-          path: app/build/outputs/apk/**/app-*-debug.apk
+          name: mpv-android-arm64-v8a
+          path: app/build/outputs/apk/**/app-*-arm64-v8a-debug.apk
