@@ -1,4 +1,4 @@
-name: Android Build
+name: Full MPV Android Build
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout source
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -20,18 +20,28 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Build APKs
-        run: ./gradlew assembleDebug --stacktrace
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git curl python3 zip unzip autoconf automake pkg-config \
+            build-essential cmake ninja-build nasm yasm meson python3-pip
 
-      - name: List APKs
-        run: ls -R app/build/outputs/apk/
+      - name: Run buildall.sh (build native libs)
+        run: |
+          cd buildscripts
+          bash buildall.sh arm64-v8a
+        env:
+          NDK_PATH: ${{ env.ANDROID_NDK_HOME }}
+
+      - name: Build the APK
+        run: ./gradlew assembleDebug --stacktrace
 
       - name: Zip all APKs
         run: |
           cd app/build/outputs/apk
           zip -r $GITHUB_WORKSPACE/mpv-apks.zip .
 
-      - name: Upload APKs as artifact
+      - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
           name: mpv-apks
