@@ -1,18 +1,14 @@
-name: Full mpv-android build (arm64)
+name: Full MPV Android Build
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main ]
-  pull_request:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -21,64 +17,31 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Set up Android SDK + NDK
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          api-level: 30
-          ndk: "23.1.7779620"
 
-      - name: Install system build deps
+      - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y git curl python3 python3-pip zip unzip \
-            autoconf automake build-essential cmake ninja-build pkg-config \
-            nasm yasm gettext
-          sudo pip3 install meson
+          sudo apt-get install -y git curl python3 zip unzip autoconf automake pkg-config \
+            build-essential cmake ninja-build nasm yasm meson python3-pip
 
-      - name: Show NDK path
+      - name: Run buildall.sh (build native libs)
         run: |
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          echo "NDK dirs:"
-          ls -lah $ANDROID_SDK_ROOT/ndk || true
-
-      - name: Export NDK env for build scripts
-        run: |
-          # Point build scripts to the installed NDK
-          export ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/23.1.7779620"
-          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
-          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
-
-      - name: Make build scripts executable
-        run: |
-          chmod +x buildscripts/*.sh || true
-          chmod +x buildscripts/scripts/*.sh || true
-
-      - name: Build native libs (mpv, ffmpeg, deps) for arm64
-        run: |
-          # run buildall for arch 'arm64' (script expects arch names like 'arm64', 'armv7l', 'x86', 'x86_64')
-          ./buildscripts/buildall.sh --arch arm64
+          cd buildscripts
+          bash buildall.sh arm64
         env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+          NDK_PATH: ${{ env.ANDROID_NDK_HOME }}
 
-      - name: Check jniLibs existence (debug)
+      - name: Build the APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Zip all APKs
         run: |
-          echo "Listing jniLibs..."
-          ls -R app/src/main/jniLibs || true
-          # show the arm64 outputs if present
-          ls -lah app/src/main/jniLibs/arm64* || true
+          cd app/build/outputs/apk
+          zip -r $GITHUB_WORKSPACE/mpv-apks.zip .
 
-      - name: Build APK(s)
-        run: ./gradlew assembleDebug --stacktrace --warning-mode all
-
-      - name: List APK output (debug)
-        run: ls -R app/build/outputs/apk/ || true
-
-      - name: Zip all APKs into repo root
-        run: |
-          zip -r $GITHUB_WORKSPACE/mpv-apks.zip app/build/outputs/apk || true
-
-      - name: Upload mpv-apks.zip
-        if: success()
+      - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
           name: mpv-apks
