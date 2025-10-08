@@ -1,4 +1,4 @@
-name: Build mpv-android (arm64)
+name: Build mpv-android (auto deps)
 
 on:
   workflow_dispatch:
@@ -6,49 +6,35 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
 
     steps:
-      - name: Checkout repository
+      - name: Checkout your edited repo
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
-      - name: Set up environment
+      - name: Fetch official mpv-android for missing build files
+        run: |
+          echo "🔄 Fetching original mpv-android for missing files..."
+          git clone --depth=1 https://github.com/mpv-android/mpv-android.git original_mpv
+
+          # Copy missing deps/scripts if not in your repo
+          mkdir -p buildscripts/deps
+          cp -rn original_mpv/buildscripts/scripts buildscripts/ || true
+          cp -rn original_mpv/buildscripts/include buildscripts/ || true
+          cp -rn original_mpv/buildscripts/deps/* buildscripts/deps/ || true
+          echo "✅ Copied missing deps and scripts from original"
+
+      - name: Install dependencies
         run: |
           sudo apt update
           sudo apt install -y git wget curl unzip python3 python3-pip ninja-build pkg-config libtool autoconf automake build-essential yasm meson
           pip install meson==1.9.1
-          echo "✅ Environment ready"
 
       - name: Set up Android NDK
-        id: setup-ndk
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: r26d
 
-      - name: Export NDK path
-        run: echo "ANDROID_NDK_ROOT=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
-
-      - name: Prepare dependency sources
-        run: |
-          mkdir -p buildscripts/deps
-          cd buildscripts/deps
-          echo "📦 Cloning dependencies..."
-          
-          # Core mpv source
-          [ ! -d mpv ] && git clone https://github.com/mpv-player/mpv.git mpv || echo "mpv already exists"
-          
-          # Common deps (forks compatible with mpv-android)
-          [ ! -d ffmpeg ] && git clone https://github.com/mirror/ffmpeg.git ffmpeg || echo "ffmpeg already exists"
-          [ ! -d libass ] && git clone https://github.com/libass/libass.git libass || echo "libass already exists"
-          [ ! -d lua ] && git clone https://github.com/lua/lua.git lua || echo "lua already exists"
-          [ ! -d libplacebo ] && git clone https://github.com/haasn/libplacebo.git libplacebo || echo "libplacebo already exists"
-
-          cd ../..
-          echo "✅ All deps ready"
-
-      - name: Build all dependencies
+      - name: Build mpv and dependencies
         run: |
           cd buildscripts
           chmod +x buildall.sh
@@ -56,20 +42,14 @@ jobs:
         env:
           ANDROID_NDK: ${{ env.ANDROID_NDK_ROOT }}
 
-      - name: Build mpv-android APK
+      - name: Build app APK
         run: |
           chmod +x buildscripts/buildall.sh
           ./buildscripts/buildall.sh --arch arm64 mpv-android
         env:
           ANDROID_NDK: ${{ env.ANDROID_NDK_ROOT }}
 
-      - name: Verify outputs
-        run: |
-          ls -lh app/build/outputs/apk/default/*/*.apk || true
-          ls -lh app/build/outputs/apk/api29/*/*.apk || true
-          ls -lh buildscripts/prefix/arm64/lib || true
-
-      - name: Upload APK and libs
+      - name: Upload built APKs
         uses: actions/upload-artifact@v4
         with:
           name: mpv-android-arm64
