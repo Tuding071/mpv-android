@@ -34,10 +34,14 @@ jobs:
       - name: Build Debug APK (arm64-v8a)
         run: ./gradlew assembleDebug -PabiFilter=arm64-v8a --stacktrace --warning-mode all
 
-      # Step 6: Upload the APK artifact
+      # Step 6: List all APKs (for debugging / verification)
+      - name: List all APKs
+        run: ls -R app/build/outputs/apk/
+
+      # Step 7: Upload the APK artifact (wildcard catches actual arm64-v8a APK)
       - name: Upload arm64-v8a APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: mpv-android-arm64-v8a
-          path: app/build/outputs/apk/default/debug/app-default-arm64-v8a-debug.apk
+          path: app/build/outputs/apk/**/app-*-arm64-v8a-debug.apk
