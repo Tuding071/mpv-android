@@ -2,15 +2,11 @@ name: Build mpv-android (arm64)
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ master ]
-  pull_request:
-    branches: [ master ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
 
     steps:
       - name: Checkout repository
@@ -34,21 +30,25 @@ jobs:
       - name: Export NDK path
         run: echo "ANDROID_NDK_ROOT=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
 
-      - name: Prepare deps (clone mpv)
+      - name: Prepare dependency sources
         run: |
           mkdir -p buildscripts/deps
-          if [ ! -d buildscripts/deps/mpv ]; then
-            git clone https://github.com/mpv-player/mpv.git buildscripts/deps/mpv
-          fi
-          echo "✅ mpv source ready"
+          cd buildscripts/deps
+          echo "📦 Cloning dependencies..."
+          
+          # Core mpv source
+          [ ! -d mpv ] && git clone https://github.com/mpv-player/mpv.git mpv || echo "mpv already exists"
+          
+          # Common deps (forks compatible with mpv-android)
+          [ ! -d ffmpeg ] && git clone https://github.com/mirror/ffmpeg.git ffmpeg || echo "ffmpeg already exists"
+          [ ! -d libass ] && git clone https://github.com/libass/libass.git libass || echo "libass already exists"
+          [ ! -d lua ] && git clone https://github.com/lua/lua.git lua || echo "lua already exists"
+          [ ! -d libplacebo ] && git clone https://github.com/haasn/libplacebo.git libplacebo || echo "libplacebo already exists"
 
-      - name: Initialize build folders
-        run: |
-          cd buildscripts
-          mkdir -p deps prefix
-          echo "✅ Build directories ready"
+          cd ../..
+          echo "✅ All deps ready"
 
-      - name: Build libmpv (arm64)
+      - name: Build all dependencies
         run: |
           cd buildscripts
           chmod +x buildall.sh
@@ -63,15 +63,16 @@ jobs:
         env:
           ANDROID_NDK: ${{ env.ANDROID_NDK_ROOT }}
 
-      - name: Verify build outputs
+      - name: Verify outputs
         run: |
           ls -lh app/build/outputs/apk/default/*/*.apk || true
           ls -lh app/build/outputs/apk/api29/*/*.apk || true
+          ls -lh buildscripts/prefix/arm64/lib || true
 
-      - name: Upload APKs as artifact
+      - name: Upload APK and libs
         uses: actions/upload-artifact@v4
         with:
-          name: mpv-android-builds
+          name: mpv-android-arm64
           path: |
             app/build/outputs/apk/**/**/*.apk
-            buildscripts/prefix/**
+            buildscripts/prefix/arm64/lib/**/*.so
