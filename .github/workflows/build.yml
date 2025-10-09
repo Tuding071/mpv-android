@@ -1,9 +1,6 @@
-name: Build mpv-android app (with deps + libs)
+name: Android mpv Build (Full)
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -11,87 +8,61 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: 📥 Checkout your repo
+      uses: actions/checkout@v3
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
+    - name: 🧩 Clone official upstream repo for include files
+      run: |
+        git clone --depth 1 https://github.com/mpv-android/mpv-android.git upstream
+        mkdir -p buildscripts/include
+        cp -r upstream/buildscripts/include/* buildscripts/include/
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+    - name: 📁 Setup deps folders
+      run: mkdir -p buildscripts/deps
 
-      - name: Set up NDK r26d
-        uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: r26d
+    - name: 📦 Clone all dependencies
+      run: |
+        cd buildscripts/deps
+        git clone --depth 1 https://github.com/mpv-player/mpv.git mpv
+        git clone --depth 1 https://git.ffmpeg.org/ffmpeg.git ffmpeg
+        git clone --depth 1 https://github.com/libass/libass.git libass
+        git clone --depth 1 https://github.com/warmcat/libwebsockets.git libwebsockets || true
+        git clone --depth 1 https://github.com/videolan/dav1d.git dav1d
+        git clone --depth 1 https://github.com/Mbed-TLS/mbedtls.git mbedtls
+        git clone --depth 1 https://github.com/luaj/luaj.git lua
+        git clone --depth 1 https://code.videolan.org/videolan/libplacebo.git libplacebo
+        cd ../..
 
-      - name: Export NDK path
-        run: echo "ANDROID_NDK_ROOT=$ANDROID_NDK_HOME" >> $GITHUB_ENV
+    - name: ⚙️ Install Android SDK & NDK
+      uses: android-actions/setup-android@v3
+      with:
+        cmdline-tools-version: latest
+        ndk-version: 26.1.10909125
 
-      - name: Install Meson build system
-        run: |
-          pip install meson==1.9.1
-          echo "✅ Environment ready"
+    - name: 🔧 Setup build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ninja-build meson cmake pkg-config python3 python3-pip gettext yasm nasm
 
-      - name: Clone upstream include folder
-        run: |
-          git clone --depth 1 https://github.com/mpv-android/mpv-android.git upstream
-          mkdir -p buildscripts/include
-          cp -r upstream/buildscripts/include/* buildscripts/include/
-          echo "✅ Copied include folder"
+    - name: 🏗️ Build mbedtls manually (since make clean fails)
+      run: |
+        cd buildscripts/deps/mbedtls
+        cmake -B build -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_BUILD_TYPE=Release
+        cmake --build build -j$(nproc)
+        cd ../../..
 
-      - name: Fetch dependencies
-        run: |
-          mkdir -p buildscripts/deps
-          cd buildscripts/deps
-          echo "📦 Cloning dependencies..."
-          for dep in mpv ffmpeg libass lua libplacebo mbedtls dav1d; do
-            if [ ! -d "$dep" ]; then
-              echo "📦 Cloning $dep ..."
-              case $dep in
-                mpv) git clone --depth 1 https://github.com/mpv-player/mpv.git ;;
-                ffmpeg) git clone --depth 1 https://github.com/FFmpeg/FFmpeg.git ffmpeg ;;
-                libass) git clone --depth 1 https://github.com/libass/libass.git ;;
-                lua) git clone --depth 1 https://github.com/lua/lua.git ;;
-                libplacebo) git clone --depth 1 https://code.videolan.org/videolan/libplacebo.git ;;
-                mbedtls) git clone --depth 1 https://github.com/Mbed-TLS/mbedtls.git ;;
-                dav1d) git clone --depth 1 https://code.videolan.org/videolan/dav1d.git ;;
-              esac
-            fi
-          done
-          echo "✅ All deps ready"
+    - name: 🏗️ Build libmpv for ARM64
+      run: |
+        cd buildscripts
+        chmod +x ../gradlew
+        ./buildall.sh --arch arm64 mpv
+        cd ..
 
-      - name: Grant Gradle permission
-        run: chmod +x gradlew
+    - name: 📱 Build Android APK
+      run: ./gradlew assembleRelease
 
-      - name: Build native libraries (arm64)
-        run: |
-          cd buildscripts
-          chmod +x buildall.sh
-          echo "🏗️ Building libmpv for arm64..."
-          ./buildall.sh --arch arm64 mpv-android || exit 1
-          echo "✅ Native libs built"
-
-      - name: Build APK
-        run: |
-          ./gradlew assembleDebug --stacktrace --warning-mode all
-          echo "✅ APK build complete"
-
-      - name: Verify APK structure
-        run: |
-          echo "🔍 Listing built APKs..."
-          ls -R app/build/outputs/apk/ || true
-
-      - name: Package all APKs
-        run: |
-          zip -r mpv-apks.zip app/build/outputs/apk
-          echo "✅ APKs packaged into zip"
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: mpv-android-full-build
-          path: mpv-apks.zip
+    - name: 📦 Upload APK artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: mpv-android-arm64
+        path: app/build/outputs/apk/release/app-release.apk
