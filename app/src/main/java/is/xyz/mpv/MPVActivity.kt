@@ -2048,15 +2048,15 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
                 fadeGestureText()
             }
             PropertyChange.PlayPause -> player.cyclePause()
-            PropertyChange.Custom -> {
-                val keycode = 0x10002 + diff.toInt()
-                MPVLib.command(arrayOf("keypress", "0x%x".format(keycode)))
-            }
-        }
-    }
+PropertyChange.Custom -> {
+    val keycode = 0x10002 + diff.toInt()
+    MPVLib.command(arrayOf("keypress", "0x%x".format(keycode)))
+}
+}  // closes when(prop)
+}  // closes the function
 
-    companion object {
-        private const val TAG = "mpv"
+companion object {
+    private const val TAG = "mpv"
         // how long should controls be displayed on screen (ms)
         private const val CONTROLS_DISPLAY_TIMEOUT = 1500L
         // how long controls fade to disappear (ms)
