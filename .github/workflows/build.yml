@@ -26,7 +26,7 @@ jobs:
         ndk-version: r26d
     - run: echo "ANDROID_NDK_ROOT=${ANDROID_NDK_HOME}" >> $GITHUB_ENV
 
-    # --- fix missing include scripts ---
+    # --- fetch include files from original mpv-android ---
     - name: Fetch include files from original mpv-android
       run: |
         git clone --depth 1 https://github.com/mpv-android/mpv-android.git upstream
@@ -35,7 +35,7 @@ jobs:
         echo "✅ Copied include folder"
         rm -rf upstream
 
-    # --- fetch dependencies if missing ---
+    # --- fetch dependencies correctly (lowercase names) ---
     - name: Fetch dependencies
       run: |
         mkdir -p buildscripts/deps
@@ -45,7 +45,7 @@ jobs:
             echo "📦 Cloning $dep ..."
             case $dep in
               mpv) git clone --depth 1 https://github.com/mpv-player/mpv.git ;;
-              ffmpeg) git clone --depth 1 https://github.com/FFmpeg/FFmpeg.git ;;
+              ffmpeg) git clone --depth 1 https://github.com/FFmpeg/FFmpeg.git ffmpeg ;;
               libass) git clone --depth 1 https://github.com/libass/libass.git ;;
               lua) git clone --depth 1 https://github.com/lua/lua.git ;;
               libplacebo) git clone --depth 1 https://code.videolan.org/videolan/libplacebo.git ;;
@@ -62,7 +62,7 @@ jobs:
         ./buildall.sh --arch arm64 mpv
         echo "✅ Finished building libmpv"
 
-    # --- build Android app APK ---
+    # --- build Android APK ---
     - name: Build Android APK
       run: |
         ./gradlew assembleDebug
