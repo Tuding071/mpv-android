@@ -2078,3 +2078,4 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         // precision used by seekbar (1/s)
         private const val SEEK_BAR_PRECISION = 2
     }
+}
