@@ -1,65 +1,86 @@
-name: Android mpv Build (Full Fixed)
+name: Build mpv-android
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - master
+  pull_request:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
+    env:
+      ANDROID_NDK_VERSION: 26.1.10909125
+      ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
+      ANDROID_NDK_HOME: ${{ github.workspace }}/android-ndk
+      DEPS_DIR: ${{ github.workspace }}/buildscripts/deps
+
     steps:
-    - name: 📥 Checkout your repo
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-    - name: 🧩 Clone official upstream repo for include + scripts
-      run: |
-        git clone --depth 1 https://github.com/mpv-android/mpv-android.git upstream
-        mkdir -p buildscripts/include buildscripts/scripts
-        cp -r upstream/buildscripts/include/* buildscripts/include/
-        cp -r upstream/buildscripts/scripts/* buildscripts/scripts/
+      - name: Set up Java (for Gradle)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
 
-    - name: 📁 Setup deps folders
-      run: mkdir -p buildscripts/deps
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-levels: 34
+          ndk-version: ${{ env.ANDROID_NDK_VERSION }}
+          cmake-version: 3.22.1
+          cache: gradle
 
-    - name: 📦 Clone all dependencies
-      run: |
-        cd buildscripts/deps
-        git clone --depth 1 https://github.com/mpv-player/mpv.git mpv
-        git clone --depth 1 https://git.ffmpeg.org/ffmpeg.git ffmpeg
-        git clone --depth 1 https://github.com/libass/libass.git libass
-        git clone --depth 1 https://github.com/videolan/dav1d.git dav1d
-        git clone --depth 1 https://github.com/Mbed-TLS/mbedtls.git mbedtls
-        git clone --depth 1 https://github.com/luaj/luaj.git lua
-        git clone --depth 1 https://code.videolan.org/videolan/libplacebo.git libplacebo
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git python3 cmake ninja-build yasm meson pkg-config \
+            autoconf automake libtool gettext nasm unzip wget curl python3-pip
 
-        # Initialize submodules for mbedtls and others if any
-        cd mbedtls
-        git submodule update --init --recursive || true
-        cd ../..
+      - name: Initialize submodules (important for mbedtls, libass, etc.)
+        run: |
+          git submodule update --init --recursive
+          ls -la buildscripts/deps
 
-    - name: ⚙️ Setup Android SDK & NDK
-      uses: android-actions/setup-android@v3
-      with:
-        cmdline-tools-version: latest
-        ndk-version: 26.1.10909125
+      - name: Download SDK + dependencies
+        run: |
+          cd buildscripts/include
+          bash download-sdk.sh
+          bash download-deps.sh
 
-    - name: 🔧 Install build dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y ninja-build meson cmake pkg-config python3 python3-pip gettext yasm nasm autoconf automake libtool git
+      - name: Build all dependencies
+        run: |
+          cd buildscripts/scripts
+          chmod +x *.sh
+          ./mbedtls.sh
+          ./dav1d.sh
+          ./freetype2.sh
+          ./fribidi.sh
+          ./harfbuzz.sh
+          ./libass.sh
+          ./libplacebo.sh
+          ./lua.sh
+          ./unibreak.sh
+          ./ffmpeg.sh
+          ./mpv.sh
 
-    - name: 🏗️ Build libmpv (arm64)
-      run: |
-        cd buildscripts
-        chmod +x ../gradlew
-        ./buildall.sh --arch arm64 mpv
-        cd ..
+      - name: Build mpv-android
+        run: |
+          cd buildscripts/scripts
+          ./mpv-android.sh
 
-    - name: 📱 Build Android APK
-      run: ./gradlew assembleRelease
+      - name: Build APK
+        run: |
+          ./gradlew assembleRelease
 
-    - name: 📦 Upload built APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: mpv-android-arm64
-        path: app/build/outputs/apk/release/app-release.apk
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpv-android-release
+          path: app/build/outputs/apk/release/app-release.apk
