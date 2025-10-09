@@ -1,6 +1,7 @@
 name: Build mpv-android (with detailed logs)
 
 on:
+  workflow_dispatch:  # ✅ Enables manual Run button
   push:
     branches: [main]
   pull_request:
@@ -67,7 +68,7 @@ jobs:
           echo "✅ No errors logged!"
         fi
 
-    # 9. Upload full logs as an artifact (optional)
+    # 9. Upload full logs as an artifact
     - name: Upload full error log
       if: always()
       uses: actions/upload-artifact@v3
