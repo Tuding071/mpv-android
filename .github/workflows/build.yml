@@ -1,60 +1,47 @@
-name: Build mpv-android (modular build)
+name: Android Build
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - master
+  pull_request:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
+      # Checkout repo + submodules
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Set up JDK 17
+      - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          distribution: temurin
+          java-version: 17
 
-      - name: Set up Android NDK
-        uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: r26d
-
-      - name: Install dependencies
+      - name: Grant execute permission to all build scripts
         run: |
-          sudo apt update
-          sudo apt install -y git python3 python3-pip cmake ninja-build meson yasm nasm gettext unzip wget
+          chmod +x buildscripts/*.sh
+          chmod +x buildscripts/include/*.sh
+          chmod +x buildscripts/scripts/*.sh
 
-      - name: Make build scripts executable
-        run: chmod +x buildscripts/*.sh buildscripts/include/*.sh buildscripts/scripts/*.sh
+      - name: Verify buildscript folder
+        run: ls -R buildscripts
 
-      - name: Download Android SDK / NDK
+      - name: Build MPV Android (arm64)
+        working-directory: buildscripts
         run: |
-          cd buildscripts
-          ./download-sdk.sh 2>&1 | tee ../sdk_log.txt
-        shell: bash
+          set -x
+          ./download-sdk.sh || echo "download-sdk.sh missing or failed" >> ../build_error_log.txt
+          ./rebuild.sh --arch arm64 2>&1 | tee ../build_error_log.txt
 
-      - name: Prepare dependencies (FFmpeg, Lua, etc.)
-        run: |
-          cd buildscripts
-          ./prepare-deps.sh 2>&1 | tee ../deps_log.txt
-        shell: bash
-
-      - name: Build APK
-        run: |
-          ./gradlew assembleRelease 2>&1 | tee build_log.txt
-        shell: bash
-
-      - name: Upload logs and APKs
+      - name: Upload build logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mpv-android-artifacts
-          path: |
-            app/build/outputs/apk/release/
-            sdk_log.txt
-            deps_log.txt
-            build_log.txt
+          name: build_error_log
+          path: build_error_log.txt
