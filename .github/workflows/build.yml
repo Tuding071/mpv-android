@@ -1,4 +1,4 @@
-name: Build mpv-android
+name: Build mpv-android (with detailed logs)
 
 on:
   push:
@@ -11,14 +11,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. Checkout repository with submodules
+    # 1. Checkout repo with submodules
     - name: Checkout repository
       uses: actions/checkout@v3
       with:
         submodules: recursive
         fetch-depth: 0
 
-    # 2. Install system dependencies
+    # 2. Install dependencies
     - name: Install dependencies
       run: |
         sudo apt-get update
@@ -26,7 +26,7 @@ jobs:
           git cmake ninja-build gettext nasm yasm libjsoncpp25 librhash0 \
           meson build-essential unzip wget curl
 
-    # 3. Set ANDROID_HOME environment variable
+    # 3. Set ANDROID_HOME dynamically
     - name: Set ANDROID_HOME
       run: echo "ANDROID_HOME=$RUNNER_TEMP/android-sdk" >> $GITHUB_ENV
 
@@ -41,11 +41,36 @@ jobs:
     - name: Prepare deps folder
       run: mkdir -p buildscripts/deps
 
-    # 6. Make build scripts executable
-    - name: Make build scripts executable
+    # 6. Make scripts executable
+    - name: Make scripts executable
       run: chmod +x buildscripts/*.sh buildscripts/include/*.sh buildscripts/scripts/*.sh
 
-    # 7. Build libmpv (arm64)
-    - name: Build libmpv
+    # 7. Build with detailed logs
+    - name: Build mpv-android
       working-directory: buildscripts
-      run: ./buildall.sh --arch arm64 mpv
+      run: |
+        set -x
+        echo "Starting build..."
+        ./buildall.sh --arch arm64 mpv 2> $GITHUB_WORKSPACE/build_error.log
+
+    # 8. Always show extracted errors at the end
+    - name: Show error logs (if any)
+      if: always()
+      run: |
+        echo ""
+        echo "=============================="
+        echo "🔴 BUILD ERROR SUMMARY (if any)"
+        echo "=============================="
+        if [ -s $GITHUB_WORKSPACE/build_error.log ]; then
+          tail -n 50 $GITHUB_WORKSPACE/build_error.log
+        else
+          echo "✅ No errors logged!"
+        fi
+
+    # 9. Upload full logs as an artifact (optional)
+    - name: Upload full error log
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: build_error_log
+        path: ${{ github.workspace }}/build_error.log
