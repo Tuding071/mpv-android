@@ -1,4 +1,4 @@
-name: Build mpv-android (auto deps)
+name: Build mpv-android (arm64-v8a)
 
 on:
   workflow_dispatch:
@@ -8,51 +8,75 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout your edited repo
-        uses: actions/checkout@v4
+    - name: Checkout your repo
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
 
-      - name: Fetch official mpv-android for missing build files
-        run: |
-          echo "🔄 Fetching original mpv-android for missing files..."
-          git clone --depth=1 https://github.com/mpv-android/mpv-android.git original_mpv
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y python3-pip ninja-build pkg-config libssl-dev git curl unzip zip
+        pip install meson==1.9.1
+        echo "✅ Environment ready"
 
-          # Copy missing deps/scripts if not in your repo
-          mkdir -p buildscripts/deps
-          cp -rn original_mpv/buildscripts/scripts buildscripts/ || true
-          cp -rn original_mpv/buildscripts/include buildscripts/ || true
-          cp -rn original_mpv/buildscripts/deps/* buildscripts/deps/ || true
-          echo "✅ Copied missing deps and scripts from original"
+    - name: Setup Android NDK
+      uses: nttld/setup-ndk@v1
+      with:
+        ndk-version: r26d
+    - run: echo "ANDROID_NDK_ROOT=${ANDROID_NDK_HOME}" >> $GITHUB_ENV
 
-      - name: Install dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y git wget curl unzip python3 python3-pip ninja-build pkg-config libtool autoconf automake build-essential yasm meson
-          pip install meson==1.9.1
+    # --- fix missing include scripts ---
+    - name: Fetch include files from original mpv-android
+      run: |
+        git clone --depth 1 https://github.com/mpv-android/mpv-android.git upstream
+        mkdir -p buildscripts/include
+        cp -r upstream/buildscripts/include/* buildscripts/include/
+        echo "✅ Copied include folder"
+        rm -rf upstream
 
-      - name: Set up Android NDK
-        uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: r26d
+    # --- fetch dependencies if missing ---
+    - name: Fetch dependencies
+      run: |
+        mkdir -p buildscripts/deps
+        cd buildscripts/deps
+        for dep in mpv ffmpeg libass lua libplacebo; do
+          if [ ! -d "$dep" ]; then
+            echo "📦 Cloning $dep ..."
+            case $dep in
+              mpv) git clone --depth 1 https://github.com/mpv-player/mpv.git ;;
+              ffmpeg) git clone --depth 1 https://github.com/FFmpeg/FFmpeg.git ;;
+              libass) git clone --depth 1 https://github.com/libass/libass.git ;;
+              lua) git clone --depth 1 https://github.com/lua/lua.git ;;
+              libplacebo) git clone --depth 1 https://code.videolan.org/videolan/libplacebo.git ;;
+            esac
+          fi
+        done
+        echo "✅ All deps ready"
 
-      - name: Build mpv and dependencies
-        run: |
-          cd buildscripts
-          chmod +x buildall.sh
-          ./buildall.sh --arch arm64 mpv
-        env:
-          ANDROID_NDK: ${{ env.ANDROID_NDK_ROOT }}
+    # --- build libmpv ---
+    - name: Build libmpv for arm64
+      run: |
+        cd buildscripts
+        chmod +x buildall.sh
+        ./buildall.sh --arch arm64 mpv
+        echo "✅ Finished building libmpv"
 
-      - name: Build app APK
-        run: |
-          chmod +x buildscripts/buildall.sh
-          ./buildscripts/buildall.sh --arch arm64 mpv-android
-        env:
-          ANDROID_NDK: ${{ env.ANDROID_NDK_ROOT }}
+    # --- build Android app APK ---
+    - name: Build Android APK
+      run: |
+        ./gradlew assembleDebug
+        echo "✅ APK built"
 
-      - name: Upload built APKs
-        uses: actions/upload-artifact@v4
-        with:
-          name: mpv-android-arm64
-          path: |
-            app/build/outputs/apk/**/**/*.apk
-            buildscripts/prefix/arm64/lib/**/*.so
+    # --- zip outputs for easy download ---
+    - name: Zip all APKs
+      run: |
+        zip -r $GITHUB_WORKSPACE/mpv-apks.zip app/build/outputs/apk/
+        ls -R app/build/outputs/apk/
+        echo "✅ APKs zipped"
+
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: mpv-android-apks
+        path: mpv-apks.zip
