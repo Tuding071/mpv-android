@@ -3,8 +3,7 @@ name: Build mpv-android
 on:
   workflow_dispatch:
   push:
-    branches:
-      - master
+    branches: [ master ]
   pull_request:
 
 jobs:
@@ -23,7 +22,7 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Set up Java (for Gradle)
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -43,18 +42,24 @@ jobs:
           sudo apt-get install -y git python3 cmake ninja-build yasm meson pkg-config \
             autoconf automake libtool gettext nasm unzip wget curl python3-pip
 
-      - name: Initialize submodules (important for mbedtls, libass, etc.)
+      - name: Ensure submodules and folders exist
         run: |
+          mkdir -p buildscripts/deps
           git submodule update --init --recursive
-          ls -la buildscripts/deps
 
-      - name: Download SDK + dependencies
+      - name: Download Android SDK + deps
         run: |
           cd buildscripts/include
           bash download-sdk.sh
           bash download-deps.sh
 
-      - name: Build all dependencies
+      - name: Cache dependencies (speeds up rebuilds)
+        uses: actions/cache@v4
+        with:
+          path: buildscripts/deps
+          key: deps-${{ hashFiles('buildscripts/scripts/*.sh') }}
+
+      - name: Build dependencies
         run: |
           cd buildscripts/scripts
           chmod +x *.sh
@@ -76,10 +81,9 @@ jobs:
           ./mpv-android.sh
 
       - name: Build APK
-        run: |
-          ./gradlew assembleRelease
+        run: ./gradlew assembleRelease
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: mpv-android-release
