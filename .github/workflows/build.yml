@@ -2,95 +2,55 @@ name: Build mpv-android
 
 on:
   push:
-    branches:
-      - main
-  workflow_dispatch:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash
+
+    env:
+      ANDROID_NDK_VERSION: r26d
+      ANDROID_HOME: ${{ runner.temp }}/android-sdk
 
     steps:
-    - name: Checkout repo
+    # 1. Checkout repository with submodules
+    - name: Checkout repository
       uses: actions/checkout@v3
       with:
         submodules: recursive
+        fetch-depth: 0
 
-    - name: Install system dependencies
+    # 2. Install required packages
+    - name: Install dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y \
-          libjsoncpp25 librhash0 cmake-data cmake gettext \
-          ninja-build meson nasm yasm unzip wget git
+          git cmake ninja-build gettext nasm yasm libjsoncpp25 librhash0 \
+          meson build-essential unzip wget curl
 
-    - name: Set up Android NDK
+    # 3. Setup Android NDK
+    - name: Setup Android NDK
       uses: nttld/setup-ndk@v1
       with:
-        ndk-version: r26d
+        ndk-version: ${{ env.ANDROID_NDK_VERSION }}
         add-to-path: true
 
-    - name: Prepare buildscripts
-      run: |
-        WORKSPACE="${GITHUB_WORKSPACE}"
-        DEPS_DIR="$WORKSPACE/buildscripts/deps"
-        INCLUDE_DIR="$WORKSPACE/buildscripts/include"
-        BUILD_DIR="$WORKSPACE/buildscripts"
+    # 4. Ensure buildscripts/deps exists
+    - name: Prepare deps folder
+      run: mkdir -p buildscripts/deps
 
-        mkdir -p "$DEPS_DIR"
-        git clone --depth 1 https://github.com/mpv-android/mpv-android.git upstream
-        cp -r upstream/buildscripts/include/* "$INCLUDE_DIR"
+    # 5. Make build scripts executable
+    - name: Make build scripts executable
+      run: chmod +x buildscripts/*.sh buildscripts/include/*.sh buildscripts/scripts/*.sh
 
-    - name: Clone dependencies
-      run: |
-        DEPS_DIR="$GITHUB_WORKSPACE/buildscripts/deps"
-        cd "$DEPS_DIR"
-        git clone --depth 1 https://github.com/mpv-android/mpv-android.git mpv
-        git clone --depth 1 https://github.com/mpv-android/FFmpeg ffmpeg
-        git clone --depth 1 https://github.com/libass/libass libass
-        git clone --depth 1 https://github.com/lua/lua lua
-        git clone --depth 1 https://github.com/haasn/mbedtls mbedtls
-        git clone --depth 1 https://code.videolan.org/videolan/dav1d.git dav1d
-        git clone --depth 1 https://github.com/Plagman/libplacebo.git libplacebo
+    # 6. Build libmpv for arm64
+    - name: Build libmpv (arm64)
+      working-directory: buildscripts
+      run: ./buildall.sh --arch arm64 mpv
 
-    - name: Make scripts executable
-      run: |
-        BUILD_DIR="$GITHUB_WORKSPACE/buildscripts"
-        chmod +x "$BUILD_DIR/buildall.sh"
-        chmod +x "$BUILD_DIR/include/*.sh"
-        chmod +x "$BUILD_DIR/scripts/*.sh"
-
-    - name: Build all architectures
-      run: |
-        BUILD_DIR="$GITHUB_WORKSPACE/buildscripts"
-        cd "$BUILD_DIR"
-
-        ARCHS=("arm64" "armv7l" "x86" "x86_64")
-        for ARCH in "${ARCHS[@]}"; do
-          echo "Building for $ARCH..."
-          ./buildall.sh --arch "$ARCH" mpv
-        done
-
-    - name: Collect APKs
-      run: |
-        mkdir -p "$GITHUB_WORKSPACE/artifacts"
-        find "$GITHUB_WORKSPACE/app/build/outputs/apk" -name "*.apk" -exec cp {} "$GITHUB_WORKSPACE/artifacts/" \;
-
-    - name: Upload APK artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: mpv-apks
-        path: artifacts/*.apk
-
-    - name: Zip all APKs
-      run: |
-        cd "$GITHUB_WORKSPACE/artifacts"
-        zip -r mpv-all-arch.zip *.apk
-
-    - name: Upload zipped APKs
-      uses: actions/upload-artifact@v4
-      with:
-        name: mpv-all-arch-zip
-        path: artifacts/mpv-all-arch.zip
+    # 7. Optionally build for other architectures
+    # - name: Build libmpv (x86)
+    #   working-directory: buildscripts
+    #   run: ./buildall.sh --arch x86 mpv
