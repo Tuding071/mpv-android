@@ -471,6 +471,34 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         this.playlistExitWarning = prefs.getBoolean("playlist_exit_warning", true)
         this.smoothSeekGesture = prefs.getBoolean("seek_gesture_smooth", false)
     }
+    
+    private fun handleTapGesture(x: Float, y: Float): Boolean {
+    if (lockedUI) {
+        showUnlockControls()
+        return true
+    }
+    
+    // Don't handle taps if controls are visible and user taps on controls
+    if (binding.controls.visibility == View.VISIBLE || binding.topControls.visibility == View.VISIBLE) {
+        val controlsRect = Rect()
+        binding.controls.getGlobalVisibleRect(controlsRect)
+        val topControlsRect = Rect()
+        binding.topControls.getGlobalVisibleRect(topControlsRect)
+        
+        if (controlsRect.contains(x.toInt(), y.toInt()) || 
+            topControlsRect.contains(x.toInt(), y.toInt())) {
+            return false
+        }
+    }
+    
+    // Toggle play/pause
+    player.cyclePause()
+    
+    // Briefly show controls to give visual feedback
+    showControls()
+    
+    return true
+}
 
     private fun writeSettings() {
         val prefs = getDefaultSharedPreferences(applicationContext)
@@ -790,8 +818,10 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         if (ev.action == MotionEvent.ACTION_DOWN)
             mightWantToToggleControls = true
         if (ev.action == MotionEvent.ACTION_UP && mightWantToToggleControls) {
-            toggleControls()
-        }
+    val handledByTap = handleTapGesture(ev.x, ev.y)
+    if (!handledByTap) {
+        toggleControls()
+    }
         return true
     }
 
