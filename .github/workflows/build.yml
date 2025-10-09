@@ -10,10 +10,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    env:
-      ANDROID_NDK_VERSION: r26d
-      ANDROID_HOME: ${{ runner.temp }}/android-sdk
-
     steps:
     # 1. Checkout repository with submodules
     - name: Checkout repository
@@ -22,7 +18,7 @@ jobs:
         submodules: recursive
         fetch-depth: 0
 
-    # 2. Install required packages
+    # 2. Install system dependencies
     - name: Install dependencies
       run: |
         sudo apt-get update
@@ -30,27 +26,26 @@ jobs:
           git cmake ninja-build gettext nasm yasm libjsoncpp25 librhash0 \
           meson build-essential unzip wget curl
 
-    # 3. Setup Android NDK
+    # 3. Set ANDROID_HOME environment variable
+    - name: Set ANDROID_HOME
+      run: echo "ANDROID_HOME=$RUNNER_TEMP/android-sdk" >> $GITHUB_ENV
+
+    # 4. Setup Android NDK
     - name: Setup Android NDK
       uses: nttld/setup-ndk@v1
       with:
-        ndk-version: ${{ env.ANDROID_NDK_VERSION }}
+        ndk-version: r26d
         add-to-path: true
 
-    # 4. Ensure buildscripts/deps exists
+    # 5. Prepare deps folder
     - name: Prepare deps folder
       run: mkdir -p buildscripts/deps
 
-    # 5. Make build scripts executable
+    # 6. Make build scripts executable
     - name: Make build scripts executable
       run: chmod +x buildscripts/*.sh buildscripts/include/*.sh buildscripts/scripts/*.sh
 
-    # 6. Build libmpv for arm64
-    - name: Build libmpv (arm64)
+    # 7. Build libmpv (arm64)
+    - name: Build libmpv
       working-directory: buildscripts
       run: ./buildall.sh --arch arm64 mpv
-
-    # 7. Optionally build for other architectures
-    # - name: Build libmpv (x86)
-    #   working-directory: buildscripts
-    #   run: ./buildall.sh --arch x86 mpv
