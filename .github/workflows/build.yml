@@ -42,18 +42,17 @@ jobs:
           sudo apt-get install -y git python3 cmake ninja-build yasm meson pkg-config \
             autoconf automake libtool gettext nasm unzip wget curl python3-pip
 
-      - name: Ensure submodules and folders exist
+      - name: Prepare folders and submodules
         run: |
           mkdir -p buildscripts/deps
           git submodule update --init --recursive
 
-      - name: Download Android SDK + deps
+      - name: Download SDK and deps
         run: |
-          cd buildscripts/include
-          bash download-sdk.sh
-          bash download-deps.sh
+          bash buildscripts/include/download-sdk.sh
+          bash buildscripts/include/download-deps.sh
 
-      - name: Cache dependencies (speeds up rebuilds)
+      - name: Cache dependencies
         uses: actions/cache@v4
         with:
           path: buildscripts/deps
@@ -75,7 +74,7 @@ jobs:
           ./ffmpeg.sh
           ./mpv.sh
 
-      - name: Build mpv-android
+      - name: Build mpv-android native
         run: |
           cd buildscripts/scripts
           ./mpv-android.sh
