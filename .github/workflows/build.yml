@@ -1,4 +1,4 @@
-name: Android mpv Build (Full)
+name: Android mpv Build (Full Fixed)
 
 on:
   workflow_dispatch:
@@ -11,11 +11,12 @@ jobs:
     - name: 📥 Checkout your repo
       uses: actions/checkout@v4
 
-    - name: 🧩 Clone official upstream repo for include files
+    - name: 🧩 Clone official upstream repo for include + scripts
       run: |
         git clone --depth 1 https://github.com/mpv-android/mpv-android.git upstream
-        mkdir -p buildscripts/include
+        mkdir -p buildscripts/include buildscripts/scripts
         cp -r upstream/buildscripts/include/* buildscripts/include/
+        cp -r upstream/buildscripts/scripts/* buildscripts/scripts/
 
     - name: 📁 Setup deps folders
       run: mkdir -p buildscripts/deps
@@ -30,27 +31,24 @@ jobs:
         git clone --depth 1 https://github.com/Mbed-TLS/mbedtls.git mbedtls
         git clone --depth 1 https://github.com/luaj/luaj.git lua
         git clone --depth 1 https://code.videolan.org/videolan/libplacebo.git libplacebo
+
+        # Initialize submodules for mbedtls and others if any
+        cd mbedtls
+        git submodule update --init --recursive || true
         cd ../..
 
-    - name: ⚙️ Install Android SDK & NDK
+    - name: ⚙️ Setup Android SDK & NDK
       uses: android-actions/setup-android@v3
       with:
         cmdline-tools-version: latest
         ndk-version: 26.1.10909125
 
-    - name: 🔧 Setup build dependencies
+    - name: 🔧 Install build dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y ninja-build meson cmake pkg-config python3 python3-pip gettext yasm nasm
+        sudo apt-get install -y ninja-build meson cmake pkg-config python3 python3-pip gettext yasm nasm autoconf automake libtool git
 
-    - name: 🏗️ Build mbedtls manually
-      run: |
-        cd buildscripts/deps/mbedtls
-        cmake -B build -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_BUILD_TYPE=Release
-        cmake --build build -j$(nproc)
-        cd ../../..
-
-    - name: 🏗️ Build libmpv for ARM64
+    - name: 🏗️ Build libmpv (arm64)
       run: |
         cd buildscripts
         chmod +x ../gradlew
@@ -60,7 +58,7 @@ jobs:
     - name: 📱 Build Android APK
       run: ./gradlew assembleRelease
 
-    - name: 📦 Upload APK artifact
+    - name: 📦 Upload built APK
       uses: actions/upload-artifact@v4
       with:
         name: mpv-android-arm64
