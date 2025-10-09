@@ -9,70 +9,67 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
+      ANDROID_NDK_VERSION: r26d
+      ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: true
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        submodules: recursive
 
-      - name: Set up Python 3
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.x'
+    - name: Set up JDK
+      uses: actions/setup-java@v3
+      with:
+        distribution: temurin
+        java-version: 17
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y wget unzip git cmake ninja-build gettext yasm nasm libjsoncpp25 librhash0
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake ninja-build gettext yasm nasm libjsoncpp25 librhash0 unzip zip curl git python3 python3-pip
+        python3 -m pip install --user meson==1.9.1
 
-      - name: Install Meson
-        run: |
-          python3 -m pip install --user meson==1.9.1
+    - name: Set up Android NDK
+      uses: nttld/setup-ndk@v1
+      with:
+        ndk: ${{ env.ANDROID_NDK_VERSION }}
 
-      # --- Ensure missing include scripts exist ---
-      - name: Fetch missing include scripts
-        run: |
-          mkdir -p buildscripts/include
-          curl -L -o buildscripts/include/depinfo.sh https://raw.githubusercontent.com/mpv-android/mpv-android/master/buildscripts/include/depinfo.sh
-          curl -L -o buildscripts/include/path.sh https://raw.githubusercontent.com/mpv-android/mpv-android/master/buildscripts/include/path.sh
-          curl -L -o buildscripts/include/download-deps.sh https://raw.githubusercontent.com/mpv-android/mpv-android/master/buildscripts/include/download-deps.sh
-          curl -L -o buildscripts/include/download-sdk.sh https://raw.githubusercontent.com/mpv-android/mpv-android/master/buildscripts/include/download-sdk.sh
-          chmod +x buildscripts/include/*.sh
+    - name: Prepare deps folder
+      run: mkdir -p buildscripts/deps
 
-      - name: Setup Android NDK (r26d)
-        uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: r26d
+    - name: Clone dependencies
+      run: |
+        cd buildscripts/deps
+        git clone --depth 1 https://github.com/mpv-android/mpv-android.git mpv
+        git clone --depth 1 https://github.com/FFmpeg/FFmpeg.git ffmpeg
+        git clone --depth 1 https://github.com/libass/libass.git libass
+        git clone --depth 1 https://github.com/LuaJIT/LuaJIT.git lua
+        git clone --depth 1 https://github.com/hoene/libplacebo.git libplacebo
+        git clone --depth 1 https://github.com/ARMmbed/mbedtls.git mbedtls
+        git clone --depth 1 https://code.videolan.org/videolan/dav1d.git dav1d
 
-      - name: Prepare build directories
-        run: mkdir -p buildscripts/deps
+    - name: Copy missing build scripts and include files
+      run: |
+        git clone --depth 1 https://github.com/mpv-android/mpv-android.git upstream
+        cp -r upstream/buildscripts/include/* buildscripts/include/
+        cp -r upstream/buildscripts/scripts/* buildscripts/scripts/
 
-      - name: Clone dependencies
-        run: |
-          cd buildscripts/deps
-          git clone --depth 1 https://github.com/mpv-android/mpv-android.git mpv
-          git clone --depth 1 https://github.com/mpv-android/FFmpeg.git ffmpeg
-          git clone --depth 1 https://github.com/libass/libass.git libass
-          git clone --depth 1 https://github.com/lua/lua.git lua
-          git clone --depth 1 https://github.com/haasn/Libplacebo.git libplacebo
-          git clone --depth 1 https://github.com/ARMmbed/mbedtls.git mbedtls
-          git clone --depth 1 https://code.videolan.org/videolan/dav1d.git dav1d
+    - name: Make build scripts executable
+      run: chmod +x buildscripts/buildall.sh buildscripts/scripts/*.sh
 
-      - name: Make build scripts executable
-        run: chmod +x buildscripts/buildall.sh buildscripts/scripts/*.sh
+    - name: Build MPV for arm64
+      run: |
+        cd buildscripts
+        bash buildall.sh --arch arm64 mpv-android
 
-      - name: Build libmpv for arm64
-        run: |
-          cd buildscripts
-          ./buildall.sh --arch arm64 mpv
+    - name: Package APKs
+      run: |
+        cd app/build/outputs/apk
+        zip -r $GITHUB_WORKSPACE/mpv-apks.zip . 
 
-      - name: List APK outputs
-        run: ls -lh app/build/outputs/apk/**/
-
-      - name: Upload APKs
-        uses: actions/upload-artifact@v4
-        with:
-          name: mpv-apks
-          path: app/build/outputs/apk/**/app-*-debug.apk
+    - name: Upload APK artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: mpv-apks
+        path: $GITHUB_WORKSPACE/mpv-apks.zip
