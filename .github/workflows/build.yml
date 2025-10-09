@@ -6,13 +6,6 @@ on:
       - main
   workflow_dispatch:
 
-env:
-  ANDROID_NDK_VERSION: r26d
-  ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
-  DEPS_DIR: ${{ github.workspace }}/buildscripts/deps
-  INCLUDE_DIR: ${{ github.workspace }}/buildscripts/include
-  BUILD_DIR: ${{ github.workspace }}/buildscripts
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -26,26 +19,34 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Set up dependencies
+    - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y libjsoncpp25 librhash0 cmake-data cmake gettext ninja-build meson nasm yasm unzip wget git
+        sudo apt-get install -y \
+          libjsoncpp25 librhash0 cmake-data cmake gettext \
+          ninja-build meson nasm yasm unzip wget git
 
-    - name: Set up NDK
+    - name: Set up Android NDK
       uses: nttld/setup-ndk@v1
       with:
-        ndk-version: ${{ env.ANDROID_NDK_VERSION }}
+        ndk-version: r26d
         add-to-path: true
 
     - name: Prepare buildscripts
       run: |
-        mkdir -p $DEPS_DIR
+        WORKSPACE="${GITHUB_WORKSPACE}"
+        DEPS_DIR="$WORKSPACE/buildscripts/deps"
+        INCLUDE_DIR="$WORKSPACE/buildscripts/include"
+        BUILD_DIR="$WORKSPACE/buildscripts"
+
+        mkdir -p "$DEPS_DIR"
         git clone --depth 1 https://github.com/mpv-android/mpv-android.git upstream
-        cp -r upstream/buildscripts/include/* $INCLUDE_DIR/
+        cp -r upstream/buildscripts/include/* "$INCLUDE_DIR"
 
     - name: Clone dependencies
       run: |
-        cd $DEPS_DIR
+        DEPS_DIR="$GITHUB_WORKSPACE/buildscripts/deps"
+        cd "$DEPS_DIR"
         git clone --depth 1 https://github.com/mpv-android/mpv-android.git mpv
         git clone --depth 1 https://github.com/mpv-android/FFmpeg ffmpeg
         git clone --depth 1 https://github.com/libass/libass libass
@@ -56,21 +57,40 @@ jobs:
 
     - name: Make scripts executable
       run: |
-        chmod +x $BUILD_DIR/buildall.sh
-        chmod +x $BUILD_DIR/include/*.sh
-        chmod +x $BUILD_DIR/scripts/*.sh
+        BUILD_DIR="$GITHUB_WORKSPACE/buildscripts"
+        chmod +x "$BUILD_DIR/buildall.sh"
+        chmod +x "$BUILD_DIR/include/*.sh"
+        chmod +x "$BUILD_DIR/scripts/*.sh"
 
-    - name: Build libmpv (arm64)
+    - name: Build all architectures
       run: |
-        cd $BUILD_DIR
-        ./buildall.sh --arch arm64 mpv
+        BUILD_DIR="$GITHUB_WORKSPACE/buildscripts"
+        cd "$BUILD_DIR"
 
-    - name: List APKs
+        ARCHS=("arm64" "armv7l" "x86" "x86_64")
+        for ARCH in "${ARCHS[@]}"; do
+          echo "Building for $ARCH..."
+          ./buildall.sh --arch "$ARCH" mpv
+        done
+
+    - name: Collect APKs
       run: |
-        ls -lh ../app/build/outputs/apk/**/
+        mkdir -p "$GITHUB_WORKSPACE/artifacts"
+        find "$GITHUB_WORKSPACE/app/build/outputs/apk" -name "*.apk" -exec cp {} "$GITHUB_WORKSPACE/artifacts/" \;
 
-    - name: Upload APK artifact
+    - name: Upload APK artifacts
       uses: actions/upload-artifact@v4
       with:
         name: mpv-apks
-        path: ../app/build/outputs/apk/**/*.apk
+        path: artifacts/*.apk
+
+    - name: Zip all APKs
+      run: |
+        cd "$GITHUB_WORKSPACE/artifacts"
+        zip -r mpv-all-arch.zip *.apk
+
+    - name: Upload zipped APKs
+      uses: actions/upload-artifact@v4
+      with:
+        name: mpv-all-arch-zip
+        path: artifacts/mpv-all-arch.zip
