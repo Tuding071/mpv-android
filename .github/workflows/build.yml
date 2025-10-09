@@ -1,8 +1,8 @@
-name: Build MPV-Android
+name: Build MPV Android
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -10,11 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     env:
       ANDROID_NDK_VERSION: r26d
-      ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
+      ANDROID_SDK_ROOT: /tmp/android-sdk
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         submodules: recursive
 
@@ -27,10 +27,10 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y cmake ninja-build gettext yasm nasm libjsoncpp25 librhash0 unzip zip curl git python3 python3-pip
-        python3 -m pip install --user meson==1.9.1
+        sudo apt-get install -y \
+          git unzip zip wget cmake ninja-build meson nasm yasm gettext libjsoncpp25 librhash0
 
-    - name: Set up Android NDK
+    - name: Set up NDK
       uses: nttld/setup-ndk@v1
       with:
         ndk: ${{ env.ANDROID_NDK_VERSION }}
@@ -44,29 +44,27 @@ jobs:
         git clone --depth 1 https://github.com/mpv-android/mpv-android.git mpv
         git clone --depth 1 https://github.com/FFmpeg/FFmpeg.git ffmpeg
         git clone --depth 1 https://github.com/libass/libass.git libass
-        git clone --depth 1 https://github.com/LuaJIT/LuaJIT.git lua
-        git clone --depth 1 https://github.com/hoene/libplacebo.git libplacebo
+        git clone --depth 1 https://github.com/lua/lua.git lua
+        git clone --depth 1 https://github.com/haasn/Libplacebo.git libplacebo
         git clone --depth 1 https://github.com/ARMmbed/mbedtls.git mbedtls
         git clone --depth 1 https://code.videolan.org/videolan/dav1d.git dav1d
 
-    - name: Copy missing build scripts and include files
+    - name: Copy include scripts
       run: |
-        git clone --depth 1 https://github.com/mpv-android/mpv-android.git upstream
-        cp -r upstream/buildscripts/include/* buildscripts/include/
-        cp -r upstream/buildscripts/scripts/* buildscripts/scripts/
+        cp -r upstream/buildscripts/include buildscripts/
 
     - name: Make build scripts executable
       run: chmod +x buildscripts/buildall.sh buildscripts/scripts/*.sh
 
-    - name: Build MPV for arm64
+    - name: Build libmpv for arm64
       run: |
         cd buildscripts
-        bash buildall.sh --arch arm64 mpv-android
+        ./buildall.sh --arch arm64 mpv
 
     - name: Package APKs
       run: |
         cd app/build/outputs/apk
-        zip -r $GITHUB_WORKSPACE/mpv-apks.zip . 
+        zip -r $GITHUB_WORKSPACE/mpv-apks.zip .
 
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
