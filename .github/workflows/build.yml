@@ -1,43 +1,37 @@
-name: Android Build
+name: Build mpv-android (Full Log)
 
 on:
+  workflow_dispatch:
   push:
-    branches:
-      - master
-  pull_request:
+    branches: [ master ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout repo + submodules
-      - name: Checkout repository
+      - name: Checkout repository (with submodules)
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Set up JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Grant execute permission to all build scripts
+      - name: Set executable permissions
         run: |
           chmod +x buildscripts/*.sh
           chmod +x buildscripts/include/*.sh
           chmod +x buildscripts/scripts/*.sh
 
-      - name: Verify buildscript folder
-        run: ls -R buildscripts
+      - name: Display directory tree
+        run: |
+          echo "==== Directory structure ===="
+          ls -R buildscripts
 
-      - name: Build MPV Android (arm64)
-        working-directory: buildscripts
+      - name: Start build
         run: |
           set -x
-          ./download-sdk.sh || echo "download-sdk.sh missing or failed" >> ../build_error_log.txt
-          ./rebuild.sh --arch arm64 2>&1 | tee ../build_error_log.txt
+          cd buildscripts
+          ./buildall.sh --arch arm64 mpv-android 2>&1 | tee ../build_error_log.txt
+        continue-on-error: true
 
       - name: Upload build logs
         if: always()
@@ -45,3 +39,10 @@ jobs:
         with:
           name: build_error_log
           path: build_error_log.txt
+
+      - name: Upload built APKs
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpv-android-apk
+          path: app/build/outputs/**/*.apk
