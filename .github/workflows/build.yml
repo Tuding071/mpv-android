@@ -1,73 +1,76 @@
-name: Build MPV Android
+name: Build mpv-android
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   workflow_dispatch:
+
+env:
+  ANDROID_NDK_VERSION: r26d
+  ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
+  DEPS_DIR: ${{ github.workspace }}/buildscripts/deps
+  INCLUDE_DIR: ${{ github.workspace }}/buildscripts/include
+  BUILD_DIR: ${{ github.workspace }}/buildscripts
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      ANDROID_NDK_VERSION: r26d
-      ANDROID_SDK_ROOT: /tmp/android-sdk
+    defaults:
+      run:
+        shell: bash
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+    - name: Checkout repo
+      uses: actions/checkout@v3
       with:
         submodules: recursive
 
-    - name: Set up JDK
-      uses: actions/setup-java@v3
-      with:
-        distribution: temurin
-        java-version: 17
-
-    - name: Install dependencies
+    - name: Set up dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y \
-          git unzip zip wget cmake ninja-build meson nasm yasm gettext libjsoncpp25 librhash0
+        sudo apt-get install -y libjsoncpp25 librhash0 cmake-data cmake gettext ninja-build meson nasm yasm unzip wget git
 
     - name: Set up NDK
       uses: nttld/setup-ndk@v1
       with:
-        ndk: ${{ env.ANDROID_NDK_VERSION }}
+        ndk-version: ${{ env.ANDROID_NDK_VERSION }}
+        add-to-path: true
 
-    - name: Prepare deps folder
-      run: mkdir -p buildscripts/deps
+    - name: Prepare buildscripts
+      run: |
+        mkdir -p $DEPS_DIR
+        git clone --depth 1 https://github.com/mpv-android/mpv-android.git upstream
+        cp -r upstream/buildscripts/include/* $INCLUDE_DIR/
 
     - name: Clone dependencies
       run: |
-        cd buildscripts/deps
+        cd $DEPS_DIR
         git clone --depth 1 https://github.com/mpv-android/mpv-android.git mpv
-        git clone --depth 1 https://github.com/FFmpeg/FFmpeg.git ffmpeg
-        git clone --depth 1 https://github.com/libass/libass.git libass
-        git clone --depth 1 https://github.com/lua/lua.git lua
-        git clone --depth 1 https://github.com/haasn/Libplacebo.git libplacebo
-        git clone --depth 1 https://github.com/ARMmbed/mbedtls.git mbedtls
+        git clone --depth 1 https://github.com/mpv-android/FFmpeg ffmpeg
+        git clone --depth 1 https://github.com/libass/libass libass
+        git clone --depth 1 https://github.com/lua/lua lua
+        git clone --depth 1 https://github.com/haasn/mbedtls mbedtls
         git clone --depth 1 https://code.videolan.org/videolan/dav1d.git dav1d
+        git clone --depth 1 https://github.com/Plagman/libplacebo.git libplacebo
 
-    - name: Copy include scripts
+    - name: Make scripts executable
       run: |
-        cp -r upstream/buildscripts/include buildscripts/
+        chmod +x $BUILD_DIR/buildall.sh
+        chmod +x $BUILD_DIR/include/*.sh
+        chmod +x $BUILD_DIR/scripts/*.sh
 
-    - name: Make build scripts executable
-      run: chmod +x buildscripts/buildall.sh buildscripts/scripts/*.sh
-
-    - name: Build libmpv for arm64
+    - name: Build libmpv (arm64)
       run: |
-        cd buildscripts
+        cd $BUILD_DIR
         ./buildall.sh --arch arm64 mpv
 
-    - name: Package APKs
+    - name: List APKs
       run: |
-        cd app/build/outputs/apk
-        zip -r $GITHUB_WORKSPACE/mpv-apks.zip .
+        ls -lh ../app/build/outputs/apk/**/
 
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
       with:
         name: mpv-apks
-        path: $GITHUB_WORKSPACE/mpv-apks.zip
+        path: ../app/build/outputs/apk/**/*.apk
