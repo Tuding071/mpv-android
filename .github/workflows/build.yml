@@ -1,4 +1,4 @@
-name: Build mpv-android (Fixed Workflow)
+name: Build mpv-android (modular build)
 
 on:
   workflow_dispatch:
@@ -27,21 +27,26 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y git python3 python3-pip cmake ninja-build meson yasm nasm gettext
+          sudo apt install -y git python3 python3-pip cmake ninja-build meson yasm nasm gettext unzip wget
 
-      - name: Make scripts executable
+      - name: Make build scripts executable
         run: chmod +x buildscripts/*.sh buildscripts/include/*.sh buildscripts/scripts/*.sh
 
-      - name: Build libmpv and dependencies
+      - name: Download Android SDK / NDK
         run: |
-          set -x
           cd buildscripts
-          ./rebuild.sh --arch arm64 2>&1 | tee ../build_error_log.txt
+          ./download-sdk.sh 2>&1 | tee ../sdk_log.txt
         shell: bash
 
-      - name: Build Android APK with Gradle
+      - name: Prepare dependencies (FFmpeg, Lua, etc.)
         run: |
-          ./gradlew assembleRelease
+          cd buildscripts
+          ./prepare-deps.sh 2>&1 | tee ../deps_log.txt
+        shell: bash
+
+      - name: Build APK
+        run: |
+          ./gradlew assembleRelease 2>&1 | tee build_log.txt
         shell: bash
 
       - name: Upload logs and APKs
@@ -50,4 +55,6 @@ jobs:
           name: mpv-android-artifacts
           path: |
             app/build/outputs/apk/release/
-            build_error_log.txt
+            sdk_log.txt
+            deps_log.txt
+            build_log.txt
