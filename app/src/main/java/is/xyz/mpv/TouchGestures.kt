@@ -42,16 +42,16 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     }
 
     private var state = State.Up
-    // relevant movement direction for the current state (0=H, 1=V)
-    private var stateDirection = 0
-
+    // CHANGE: Made internal for MPVActivity to access for gesture-type check
+    internal var stateDirection = 0
+    
     // timestamp of the last tap (ACTION_UP)
     private var lastTapTime = 0L
     // when the current gesture began
     private var lastDownTime = 0L
 
-    // where user initially placed their finger (ACTION_DOWN)
-    private var initialPos = PointF()
+    // CHANGE: Made internal for MPVActivity to access for gesture-type check
+    internal var initialPos = PointF()
     // last non-throttled processed position
     private var lastPos = PointF()
     
@@ -59,7 +59,8 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     private var lastSeekUpdateTime = 0L // Time of the last SEEK command sent
     private var lastSeekUpdatePos = PointF() // Position of the last SEEK command sent
 
-    private var width = 0f
+    // CHANGE: Made internal for MPVActivity to access for gesture-type check
+    internal var width = 0f
     private var height = 0f
     // minimum movement which triggers a Control state
     private var trigger = 0f
@@ -92,20 +93,6 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     private val DEADZONE = 10 // top/bottom deadzone percentage
 
     private val TAP_DURATION = 350L
-    // NEW: Long press duration (before ramp begins)
-    private const val LONG_PRESS_DURATION = 300L 
-    
-    // NEW: Seek sensitivity reduction (80% reduction = 20% sensitivity)
-    private const val SEEK_SENSITIVITY_FACTOR = 0.20f 
-
-    // minimum movement for Control state to begin
-    private val THRESHOLD_MOVE = 2
-
-    // minimum movement for a value update to take place
-    // Modifying this to 1 for precise slow seeking, and controlling fast seek with timing/velocity
-    private const val THRESHOLD_UPDATE_MIN = 1 
-    private const val THRESHOLD_UPDATE_MAX = 5 // Max required pixels for fast update
-    private const val SEEK_UPDATE_TIMEOUT = 100L // Max time between updates
 
     // total height that changes volume/brightness from 0 to 100
     private var totalHeight = 0f
@@ -135,13 +122,13 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     fun loadPreferences(sh: SharedPreferences, r: Resources) {
         fun get(key: String, res: Int) = sh.getString(key, r.getString(res))!!
 
-        gestureHoriz = map[get("gesture_move_horiz", R.string.pref_gesture_move_horiz_default)] ?: State.Down
-        gestureVertLeft = map[get("gesture_move_vert_left", R.string.pref_gesture_move_vert_left_default)] ?: State.Down
-        gestureVertRight = map[get("gesture_move_vert_right", R.string.pref_gesture_move_vert_right_default)] ?: State.Down
+        gestureHoriz = map[get("gesture_move_horiz", r.getString(R.string.pref_gesture_move_horiz_default))] ?: State.Down
+        gestureVertLeft = map[get("gesture_move_vert_left", r.getString(R.string.pref_gesture_move_vert_left_default))] ?: State.Down
+        gestureVertRight = map[get("gesture_move_vert_right", r.getString(R.string.pref_gesture_move_vert_right_default))] ?: State.Down
 
-        tapGestureLeft = map2[get("gesture_tap_left", R.string.pref_gesture_tap_left_default)]
-        tapGestureCenter = map2[get("gesture_tap_center", R.string.pref_gesture_tap_center_default)]
-        tapGestureRight = map2[get("gesture_tap_right", R.string.pref_gesture_tap_right_default)]
+        tapGestureLeft = map2[get("gesture_tap_left", r.getString(R.string.pref_gesture_tap_left_default))]
+        tapGestureCenter = map2[get("gesture_tap_center", r.getString(R.string.pref_gesture_tap_center_default))]
+        tapGestureRight = map2[get("gesture_tap_right", r.getString(R.string.pref_gesture_tap_right_default))]
     }
 
     fun onTouchEvent(e: MotionEvent): Boolean {
@@ -196,7 +183,8 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
                 gestureHandled = true
             }
             MotionEvent.ACTION_MOVE -> {
-                val dist = PointF(p.x - initialPos.x, p.y - initialPos.y).length()
+                // FIX: Used 'point' instead of 'p'
+                val dist = PointF(point.x - initialPos.x, point.y - initialPos.y).length() 
                 
                 // If movement exceeds threshold, cancel long press
                 if (state == State.Down && dist > trigger) {
@@ -355,5 +343,14 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
 
     companion object {
         private const val TAG = "mpv"
+        
+        // FIX: Moved const val declarations here to resolve compiler error
+        private const val LONG_PRESS_DURATION = 300L 
+        private const val SEEK_SENSITIVITY_FACTOR = 0.20f 
+        
+        private const val THRESHOLD_MOVE = 2
+        private const val THRESHOLD_UPDATE_MIN = 1 
+        private const val THRESHOLD_UPDATE_MAX = 5
+        private const val SEEK_UPDATE_TIMEOUT = 100L
     }
 }
