@@ -2017,7 +2017,10 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
                 gestureTextView.text = getString(R.string.ui_seek_distance, Utils.prettyTime(newPos), diffText)
                 fadeGestureText()
             }
-            PropertyChange.PlayPause -> player.cyclePause()
+            PropertyChange.PlayPause -> {
+    // Simply toggle play/pause without showing any UI
+                player.cyclePause()
+            }
             PropertyChange.Custom -> {
                 val keycode = 0x10002 + diff.toInt()
                 MPVLib.command(arrayOf("keypress", "0x%x".format(keycode)))
