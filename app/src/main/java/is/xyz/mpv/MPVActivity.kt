@@ -2005,7 +2005,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     if (pausedForSeek == 1)
         player.paused = false
     gestureTextView.visibility = View.GONE
-}
+},  // <-- ADDED COMMA
 
 /* Tap gestures */
 PropertyChange.SeekFixed -> {
@@ -2016,11 +2016,13 @@ PropertyChange.SeekFixed -> {
     val diffText = Utils.prettyTime(seekTime.toInt(), true)
     gestureTextView.text = getString(R.string.ui_seek_distance, Utils.prettyTime(newPos), diffText)
     fadeGestureText()
-}
+},  // <-- ADDED COMMA
+
 PropertyChange.PlayPause -> {
     // Simply toggle play/pause without showing any UI
     player.cyclePause()
-}
+},  // <-- ADDED COMMA
+
 PropertyChange.Custom -> {
     val keycode = 0x10002 + diff.toInt()
     MPVLib.command(arrayOf("keypress", "0x%x".format(keycode)))
@@ -2049,30 +2051,29 @@ PropertyChange.HoldSpeedEnd -> {
     }, 50)
 }  // <-- NO COMMA HERE (last case)
 
-}  // <-- ADD THIS: Closing brace of the 'when' statement
-}  // <-- ADD THIS: Closing brace of the 'onPropertyChange' method
+}  // <-- Closing brace of the 'when' statement
+}  // <-- Closing brace of the 'onPropertyChange' method
 
 companion object {
     private const val TAG = "mpv"
     // how long should controls be displayed on screen (ms)
     private const val CONTROLS_DISPLAY_TIMEOUT = 1500L
-        // how long controls fade to disappear (ms)
-        private const val CONTROLS_FADE_DURATION = 500L
-        // resolution (px) of the thumbnail displayed with playback notification
-        private const val THUMB_SIZE = 384
-        // smallest aspect ratio that is considered non-square
-        private const val ASPECT_RATIO_MIN = 1.2f // covers 5:4 and up
-        // fraction to which audio volume is ducked on loss of audio focus
-        private const val AUDIO_FOCUS_DUCKING = 0.5f
-        // request codes for invoking other activities
-        private const val RCODE_EXTERNAL_AUDIO = 1000
-        private const val RCODE_EXTERNAL_SUB = 1001
-        private const val RCODE_LOAD_FILE = 1002
-        // action of result intent
-        private const val RESULT_INTENT = "is.xyz.mpv.MPVActivity.result"
-        // stream type used with AudioManager
-        private const val STREAM_TYPE = AudioManager.STREAM_MUSIC
-        // precision used by seekbar (1/s)
-        private const val SEEK_BAR_PRECISION = 2
-    }
+    // how long controls fade to disappear (ms)
+    private const val CONTROLS_FADE_DURATION = 500L
+    // resolution (px) of the thumbnail displayed with playback notification
+    private const val THUMB_SIZE = 384
+    // smallest aspect ratio that is considered non-square
+    private const val ASPECT_RATIO_MIN = 1.2f // covers 5:4 and up
+    // fraction to which audio volume is ducked on loss of audio focus
+    private const val AUDIO_FOCUS_DUCKING = 0.5f
+    // request codes for invoking other activities
+    private const val RCODE_EXTERNAL_AUDIO = 1000
+    private const val RCODE_EXTERNAL_SUB = 1001
+    private const val RCODE_LOAD_FILE = 1002
+    // action of result intent
+    private const val RESULT_INTENT = "is.xyz.mpv.MPVActivity.result"
+    // stream type used with AudioManager
+    private const val STREAM_TYPE = AudioManager.STREAM_MUSIC
+    // precision used by seekbar (1/s)
+    private const val SEEK_BAR_PRECISION = 2
 }
