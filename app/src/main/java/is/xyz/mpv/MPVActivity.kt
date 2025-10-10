@@ -2002,36 +2002,60 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
                 gestureTextView.text = getString(R.string.ui_brightness, (newBright * 100).roundToInt())
             }
             PropertyChange.Finalize -> {
-                if (pausedForSeek == 1)
-                    player.paused = false
-                gestureTextView.visibility = View.GONE
-            }
+    if (pausedForSeek == 1)
+        player.paused = false
+    gestureTextView.visibility = View.GONE
+}
 
-            /* Tap gestures */
-            PropertyChange.SeekFixed -> {
-                val seekTime = diff * 10f
-                val newPos = psc.positionSec + seekTime.toInt() // only for display
-                MPVLib.command(arrayOf("seek", seekTime.toString(), "relative"))
+/* Tap gestures */
+PropertyChange.SeekFixed -> {
+    val seekTime = diff * 10f
+    val newPos = psc.positionSec + seekTime.toInt() // only for display
+    MPVLib.command(arrayOf("seek", seekTime.toString(), "relative"))
 
-                val diffText = Utils.prettyTime(seekTime.toInt(), true)
-                gestureTextView.text = getString(R.string.ui_seek_distance, Utils.prettyTime(newPos), diffText)
-                fadeGestureText()
-            }
-            PropertyChange.PlayPause -> {
+    val diffText = Utils.prettyTime(seekTime.toInt(), true)
+    gestureTextView.text = getString(R.string.ui_seek_distance, Utils.prettyTime(newPos), diffText)
+    fadeGestureText()
+}
+PropertyChange.PlayPause -> {
     // Simply toggle play/pause without showing any UI
-                player.cyclePause()
-            }
-            PropertyChange.Custom -> {
-                val keycode = 0x10002 + diff.toInt()
-                MPVLib.command(arrayOf("keypress", "0x%x".format(keycode)))
-            }
-        }
-    }
+    player.cyclePause()
+}
+PropertyChange.Custom -> {
+    val keycode = 0x10002 + diff.toInt()
+    MPVLib.command(arrayOf("keypress", "0x%x".format(keycode)))
+},  // <-- COMMA HERE
 
-    companion object {
-        private const val TAG = "mpv"
-        // how long should controls be displayed on screen (ms)
-        private const val CONTROLS_DISPLAY_TIMEOUT = 1500L
+/* Hold gestures */
+PropertyChange.HoldSpeedStart -> {
+    // Mute audio first, then set speed to 2x
+    MPVLib.setPropertyBoolean("mute", true)  // Mute first
+    Handler(Looper.getMainLooper()).postDelayed({
+        MPVLib.setPropertyDouble("speed", 2.0)   // Then change speed
+        Handler(Looper.getMainLooper()).postDelayed({
+            MPVLib.setPropertyBoolean("mute", false) // Then unmute
+        }, 50) // Small delay after speed change
+    }, 50) // Small delay after mute
+},  // <-- COMMA HERE
+
+PropertyChange.HoldSpeedEnd -> {
+    // Mute audio first, then set speed back to normal
+    MPVLib.setPropertyBoolean("mute", true)  // Mute first
+    Handler(Looper.getMainLooper()).postDelayed({
+        MPVLib.setPropertyDouble("speed", 1.0)   // Then change speed
+        Handler(Looper.getMainLooper()).postDelayed({
+            MPVLib.setPropertyBoolean("mute", false) // Then unmute
+        }, 50)
+    }, 50)
+}  // <-- NO COMMA HERE (last case)
+
+}  // <-- ADD THIS: Closing brace of the 'when' statement
+}  // <-- ADD THIS: Closing brace of the 'onPropertyChange' method
+
+companion object {
+    private const val TAG = "mpv"
+    // how long should controls be displayed on screen (ms)
+    private const val CONTROLS_DISPLAY_TIMEOUT = 1500L
         // how long controls fade to disappear (ms)
         private const val CONTROLS_FADE_DURATION = 500L
         // resolution (px) of the thumbnail displayed with playback notification
