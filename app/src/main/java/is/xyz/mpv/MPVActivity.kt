@@ -2028,34 +2028,70 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
 
         /* Hold gestures */
         PropertyChange.HoldSpeedStart -> {
-            // Speed up gradually: 1.0 → 1.25 → 1.50 → 1.75 → 2.0 (100ms each step)
+            // Speed up gradually: 1.0 → 1.1 → 1.2 → 1.3 → 1.4 → 1.5 → 1.6 → 1.7 → 1.8 → 1.9 → 2.0 (50ms each step)
             Handler(Looper.getMainLooper()).postDelayed({
-                MPVLib.setPropertyDouble("speed", 1.25)
+                MPVLib.setPropertyDouble("speed", 1.1)
                 Handler(Looper.getMainLooper()).postDelayed({
-                    MPVLib.setPropertyDouble("speed", 1.50)
+                    MPVLib.setPropertyDouble("speed", 1.2)
                     Handler(Looper.getMainLooper()).postDelayed({
-                        MPVLib.setPropertyDouble("speed", 1.75)
+                        MPVLib.setPropertyDouble("speed", 1.3)
                         Handler(Looper.getMainLooper()).postDelayed({
-                            MPVLib.setPropertyDouble("speed", 2.0)
-                        }, 100)
-                    }, 100)
-                }, 100)
-            }, 100)
+                            MPVLib.setPropertyDouble("speed", 1.4)
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                MPVLib.setPropertyDouble("speed", 1.5)
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    MPVLib.setPropertyDouble("speed", 1.6)
+                                    Handler(Looper.getMainLooper()).postDelayed({
+                                        MPVLib.setPropertyDouble("speed", 1.7)
+                                        Handler(Looper.getMainLooper()).postDelayed({
+                                            MPVLib.setPropertyDouble("speed", 1.8)
+                                            Handler(Looper.getMainLooper()).postDelayed({
+                                                MPVLib.setPropertyDouble("speed", 1.9)
+                                                Handler(Looper.getMainLooper()).postDelayed({
+                                                    MPVLib.setPropertyDouble("speed", 2.0)
+                                                }, 50)
+                                            }, 50)
+                                        }, 50)
+                                    }, 50)
+                                }, 50)
+                            }, 50)
+                        }, 50)
+                    }, 50)
+                }, 50)
+            }, 50)
         }
         PropertyChange.HoldSpeedEnd -> {
-            // Slow down gradually: 2.0 → 1.75 → 1.50 → 1.25 → 1.0 (100ms each step)
+            // Slow down gradually: 2.0 → 1.9 → 1.8 → 1.7 → 1.6 → 1.5 → 1.4 → 1.3 → 1.2 → 1.1 → 1.0 (50ms each step)
             Handler(Looper.getMainLooper()).postDelayed({
-                MPVLib.setPropertyDouble("speed", 1.75)
+                MPVLib.setPropertyDouble("speed", 1.9)
                 Handler(Looper.getMainLooper()).postDelayed({
-                    MPVLib.setPropertyDouble("speed", 1.50)
+                    MPVLib.setPropertyDouble("speed", 1.8)
                     Handler(Looper.getMainLooper()).postDelayed({
-                        MPVLib.setPropertyDouble("speed", 1.25)
+                        MPVLib.setPropertyDouble("speed", 1.7)
                         Handler(Looper.getMainLooper()).postDelayed({
-                            MPVLib.setPropertyDouble("speed", 1.0)
-                        }, 100)
-                    }, 100)
-                }, 100)
-            }, 100)
+                            MPVLib.setPropertyDouble("speed", 1.6)
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                MPVLib.setPropertyDouble("speed", 1.5)
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    MPVLib.setPropertyDouble("speed", 1.4)
+                                    Handler(Looper.getMainLooper()).postDelayed({
+                                        MPVLib.setPropertyDouble("speed", 1.3)
+                                        Handler(Looper.getMainLooper()).postDelayed({
+                                            MPVLib.setPropertyDouble("speed", 1.2)
+                                            Handler(Looper.getMainLooper()).postDelayed({
+                                                MPVLib.setPropertyDouble("speed", 1.1)
+                                                Handler(Looper.getMainLooper()).postDelayed({
+                                                    MPVLib.setPropertyDouble("speed", 1.0)
+                                                }, 50)
+                                            }, 50)
+                                        }, 50)
+                                    }, 50)
+                                }, 50)
+                            }, 50)
+                        }, 50)
+                    }, 50)
+                }, 50)
+            }, 50)
         }
     }
 }
