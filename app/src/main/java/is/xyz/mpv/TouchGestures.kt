@@ -235,23 +235,3 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         return gestureHandled
     }
 }
-
-
-// --- Smooth scrubbing integration (injected) ---
-// The original file did not contain an exact PropertyChange.Seek handler match to replace.
-// Please add or modify your seek handling so that it calls the following methods on your MPVActivity instance:
-//
-// When seeking starts:
-//
-//    mpvActivity.setPausedForSeek(true)
-//
-// While dragging (update preview position frequently, throttled to ~80ms):
-//
-//    mpvActivity.previewSeek(newPositionInSeconds)
-//
-// When the gesture finishes:
-//
-//    mpvActivity.applySeek()
-//
-// This will enable frame-accurate scrubbing using `hr-seek` set by code in MPVActivity.
-// --- end of integration notes ---
