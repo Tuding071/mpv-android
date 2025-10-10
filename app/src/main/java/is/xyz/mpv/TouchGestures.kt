@@ -3,8 +3,6 @@ package `is`.xyz.mpv
 import android.content.SharedPreferences
 import android.content.res.Resources
 import android.graphics.PointF
-import android.os.Handler
-import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.view.MotionEvent
@@ -21,8 +19,6 @@ enum class PropertyChange {
     SeekFixed,
     PlayPause,
     Custom,
-    // NEW: For speed shifting
-    SpeedShift,
 }
 
 internal interface TouchGesturesObserver {
@@ -37,8 +33,6 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         ControlSeek,
         ControlVolume,
         ControlBright,
-        // NEW: State for long press speed shift
-        ControlSpeedShift,
     }
 
     private var state = State.Up
@@ -54,15 +48,6 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     private var initialPos = PointF()
     // last non-throttled processed position
     private var lastPos = PointF()
-
-    // NEW: Handler for long press detection
-    private val handler = Handler(Looper.getMainLooper())
-    private val longPressRunnable = Runnable {
-        if (state == State.Down) {
-            state = State.ControlSpeedShift
-            sendPropertyChange(PropertyChange.SpeedShift, 2.0f)
-        }
-    }
 
     private var width = 0f
     private var height = 0f
@@ -150,11 +135,6 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     }
 
     private fun processMovement(p: PointF): Boolean {
-        // NEW: Block other gestures during speed shift
-        if (state == State.ControlSpeedShift) {
-            return true
-        }
-        
         // throttle events: only send updates when there's some movement compared to last update
         // 3 here is arbitrary
         if (PointF(lastPos.x - p.x, lastPos.y - p.y).length() < trigger / 3)
@@ -187,9 +167,6 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
                 sendPropertyChange(PropertyChange.Volume, CONTROL_VOLUME_MAX * dr)
             State.ControlBright ->
                 sendPropertyChange(PropertyChange.Bright, CONTROL_BRIGHT_MAX * dr)
-            State.ControlSpeedShift -> {
-                // Speed shift is handled by long press only, no movement processing needed
-            }
         }
         return state != State.Up && state != State.Down
     }
@@ -235,16 +212,6 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         val point = PointF(e.x, e.y)
         when (e.action) {
             MotionEvent.ACTION_UP -> {
-                // NEW: Cancel long press and handle speed shift release
-                handler.removeCallbacks(longPressRunnable)
-                
-                // Handle speed shift release
-                if (state == State.ControlSpeedShift) {
-                    sendPropertyChange(PropertyChange.SpeedShift, 1.0f)
-                    state = State.Up
-                    return true
-                }
-                
                 gestureHandled = processMovement(point) or processTap(point)
                 if (state != State.Down)
                     sendPropertyChange(PropertyChange.Finalize, 0f)
@@ -258,10 +225,6 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
                 processTap(point)
                 lastPos.set(point)
                 state = State.Down
-                
-                // NEW: Start long press timer
-                handler.postDelayed(longPressRunnable, 300L)
-                
                 // always return true on ACTION_DOWN to continue receiving events
                 gestureHandled = true
             }
@@ -272,3 +235,23 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         return gestureHandled
     }
 }
+
+
+// --- Smooth scrubbing integration (injected) ---
+// The original file did not contain an exact PropertyChange.Seek handler match to replace.
+// Please add or modify your seek handling so that it calls the following methods on your MPVActivity instance:
+//
+// When seeking starts:
+//
+//    mpvActivity.setPausedForSeek(true)
+//
+// While dragging (update preview position frequently, throttled to ~80ms):
+//
+//    mpvActivity.previewSeek(newPositionInSeconds)
+//
+// When the gesture finishes:
+//
+//    mpvActivity.applySeek()
+//
+// This will enable frame-accurate scrubbing using `hr-seek` set by code in MPVActivity.
+// --- end of integration notes ---
