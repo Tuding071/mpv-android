@@ -44,23 +44,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch 
 import kotlin.math.*
 
-// FIX: Corrected MPVLib Extensions to use commands and handle nullability for paused status.
-private val MPVLib.paused: Boolean
-    get() = MPVLib.getPropertyBoolean("pause") ?: false
+// FIX: Redefined as standalone functions that operate on static MPVLib methods
+private fun isPlayerPaused(): Boolean = MPVLib.getPropertyBoolean("pause") ?: false
+private fun playerPause() { MPVLib.command(arrayOf("set", "pause", "yes")) }
+private fun playerResume() { MPVLib.command(arrayOf("set", "pause", "no")) }
+private fun playerCyclePause() { MPVLib.command(arrayOf("cycle", "pause")) }
 
-private fun MPVLib.pause() {
-    MPVLib.command(arrayOf("set", "pause", "yes"))
-}
-
-private fun MPVLib.resume() {
-    MPVLib.command(arrayOf("set", "pause", "no"))
-}
-
-private fun MPVLib.cyclePause() {
-    MPVLib.command(arrayOf("cycle", "pause"))
-}
-
-// FIX: Minimal definition for AudioFocusHelper
+// Minimal definition for AudioFocusHelper
 class AudioFocusHelper(context: Context) {
     fun requestPlaybackFocus(): Boolean = true
     fun abandonFocus() {}
@@ -68,10 +58,7 @@ class AudioFocusHelper(context: Context) {
 
 internal class MPVActivity : AppCompatActivity(), TouchGesturesObserver {
 
-    // Note: The player variable is used by extensions, but its explicit initialization is not shown.
-    // The previous error for MPVLib on line 76 is likely related to this structural ambiguity.
-    // Assuming MPVLib is available statically or via a properly initialized instance 'player' later.
-    private val player = MPVLib() // Explicitly re-adding this line as it's needed for extensions.
+    // FIX: Removed "private val player = MPVLib()" which was causing Unresolved reference 'MPVLib'
     private lateinit var binding: PlayerBinding
     private lateinit var touchGestures: TouchGestures
     
@@ -140,9 +127,9 @@ internal class MPVActivity : AppCompatActivity(), TouchGesturesObserver {
 
     // NEW: Shared logic to pause video when seeking starts
     private fun onSeekStart() {
-        if (!player.paused) {
+        if (!isPlayerPaused()) { // FIX: Use new helper function
             wasPlayingBeforeSeek = true
-            player.pause() // Uses corrected extension
+            playerPause() // FIX: Use new helper function
         } else {
             wasPlayingBeforeSeek = false
         }
@@ -153,7 +140,7 @@ internal class MPVActivity : AppCompatActivity(), TouchGesturesObserver {
     // NEW: Shared logic to resume video when seeking ends
     private fun onSeekEnd() {
         if (wasPlayingBeforeSeek) {
-            player.resume() // Uses corrected extension
+            playerResume() // FIX: Use new helper function
         }
         wasPlayingBeforeSeek = false
         // Update controls immediately on stop
@@ -172,9 +159,11 @@ internal class MPVActivity : AppCompatActivity(), TouchGesturesObserver {
             loadPreferences(getDefaultSharedPreferences(applicationContext), resources)
         }
         
+        // FIX: Using findViewById as a robust fallback to find seekbar by ID, resolving Unresolved reference 'seekbar'
+        val seekbar = binding.controls.findViewById<SeekBar>(R.id.seekbar)
+        
         // NEW: Apply custom seekbar listener for pause-on-seek logic
-        // The unresolved 'seekbar' and 'getDurationText' errors are likely here.
-        binding.controls.seekbar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+        seekbar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser)
                     return
@@ -223,9 +212,9 @@ internal class MPVActivity : AppCompatActivity(), TouchGesturesObserver {
                 
                 if (isSeekGesture) {
                     onSeekStart() // Start pause logic for touch gestures
-                    showGestureText() // FIX: Called with default argument
+                    showGestureText() // Called with default argument
                 } else {
-                    showGestureText() // FIX: Called with default argument
+                    showGestureText() // Called with default argument
                 }
             }
             PropertyChange.Seek -> {
@@ -253,7 +242,7 @@ internal class MPVActivity : AppCompatActivity(), TouchGesturesObserver {
             PropertyChange.SeekFixed -> {
                 // ... (existing code)
             }
-            PropertyChange.PlayPause -> player.cyclePause() // Uses corrected extension
+            PropertyChange.PlayPause -> playerCyclePause() // FIX: Use new helper function
             
             // NEW: Handle speed shift command (diff is the target speed)
             PropertyChange.SpeedShift -> {
