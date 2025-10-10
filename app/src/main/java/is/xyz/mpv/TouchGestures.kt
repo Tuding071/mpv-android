@@ -8,7 +8,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.view.MotionEvent
-import `is`.xyz.mpv.R` // FIX: R import moved to the top of the file
+import `is`.xyz.mpv.R
 import kotlin.math.*
 
 enum class PropertyChange {
@@ -57,8 +57,8 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     private var lastPos = PointF()
     
     // NEW: For velocity-based seeking
-    private var lastSeekUpdateTime = 0L // Time of the last SEEK command sent
-    private var lastSeekUpdatePos = PointF() // Position of the last SEEK command sent
+    private var lastSeekUpdateTime = 0L
+    private var lastSeekUpdatePos = PointF()
 
     // CHANGE: Made internal for MPVActivity to access for gesture-type check
     internal var width = 0f
@@ -122,8 +122,9 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
 
     fun loadPreferences(sh: SharedPreferences, r: Resources) {
         // Helper function to safely get a String, using Resource ID for the default.
-        fun getPrefString(key: String, defaultResId: Int) = 
-            sh.getString(key, r.getString(defaultResId)) ?: r.getString(defaultResId)
+        fun getPrefString(key: String, defaultResId: Int): String {
+            return sh.getString(key, r.getString(defaultResId)) ?: r.getString(defaultResId)
+        }
 
         gestureHoriz = map[getPrefString("gesture_move_horiz", R.string.pref_gesture_move_horiz_default)] ?: State.Down
         gestureVertLeft = map[getPrefString("gesture_move_vert_left", R.string.pref_gesture_move_vert_left_default)] ?: State.Down
@@ -279,13 +280,13 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
                 lastSeekUpdatePos.set(p)
             }
             
-            lastPos.set(p) // Update lastPos for volume/bright logic fallback (though not applicable here)
+            lastPos.set(p)
             return true
 
         } else {
             // Logic for Volume/Bright (No throttling required)
             val d = if (stateDirection == 0) p.x - lastPos.x else p.y - lastPos.y
-            if (abs(d) < THRESHOLD_UPDATE_MIN) // Use min threshold for volume/bright as well
+            if (abs(d) < THRESHOLD_UPDATE_MIN)
                 return true 
                 
             val diff = when (state) {
