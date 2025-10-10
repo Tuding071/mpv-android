@@ -8,7 +8,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.view.MotionEvent
-import `is`.xyz.mpv.R` // ADDED: Explicit import for R class
+import `is`.xyz.mpv.R` // FIX: R import moved to the top of the file
 import kotlin.math.*
 
 enum class PropertyChange {
@@ -121,7 +121,7 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     }
 
     fun loadPreferences(sh: SharedPreferences, r: Resources) {
-        // FIX: Helper function to safely get a String, using Resource ID for the default.
+        // Helper function to safely get a String, using Resource ID for the default.
         fun getPrefString(key: String, defaultResId: Int) = 
             sh.getString(key, r.getString(defaultResId)) ?: r.getString(defaultResId)
 
