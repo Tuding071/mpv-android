@@ -19,6 +19,10 @@ enum class PropertyChange {
     SeekFixed,
     PlayPause,
     Custom,
+    
+    /* Hold gestures */
+    HoldSpeedStart,
+    HoldSpeedEnd,
 }
 
 internal interface TouchGesturesObserver {
@@ -33,6 +37,7 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         ControlSeek,
         ControlVolume,
         ControlBright,
+        HoldSpeed,
     }
 
     private var state = State.Up
@@ -54,6 +59,10 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     // minimum movement which triggers a Control state
     private var trigger = 0f
 
+    // Hold gesture variables
+    private var holdStartTime = 0L
+    private val HOLD_DURATION = 200L // milliseconds to trigger hold
+
     // which property change should be invoked where
     private var gestureHoriz = State.Down
     private var gestureVertLeft = State.Down
@@ -68,6 +77,11 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     private inline fun assertFloat(vararg n: Float) {
         if (!checkFloat(*n))
             throw IllegalArgumentException()
+    }
+
+    private fun isInLeftoverArea(point: PointF): Boolean {
+        val inCenterZone = point.x >= width * 0.25f && point.x <= width * 0.75f && point.y <= height * 0.70f
+        return !inCenterZone // True if in leftover areas
     }
 
     fun setMetrics(width: Float, height: Float) {
@@ -103,46 +117,50 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     }
 
     private fun processTap(p: PointF): Boolean {
-    if (state == State.Up) {
-        lastDownTime = SystemClock.uptimeMillis()
-        // 3 is another arbitrary value here that seems good enough
-        if (PointF(lastPos.x - p.x, lastPos.y - p.y).length() > trigger * 3)
-            lastTapTime = 0 // last tap was too far away, invalidate
-        return true
-    }
-    // discard if any movement gesture took place
-    if (state != State.Down)
-        return false
+        if (state == State.HoldSpeed) return false
 
-    val now = SystemClock.uptimeMillis()
-    if (now - lastDownTime >= TAP_DURATION) {
-        lastTapTime = 0 // finger was held too long, reset
+        if (state == State.Up) {
+            lastDownTime = SystemClock.uptimeMillis()
+            // 3 is another arbitrary value here that seems good enough
+            if (PointF(lastPos.x - p.x, lastPos.y - p.y).length() > trigger * 3)
+                lastTapTime = 0 // last tap was too far away, invalidate
+            return true
+        }
+        // discard if any movement gesture took place
+        if (state != State.Down)
+            return false
+
+        val now = SystemClock.uptimeMillis()
+        if (now - lastDownTime >= TAP_DURATION) {
+            lastTapTime = 0 // finger was held too long, reset
+            return false
+        }
+        
+        // SINGLE TAP - Add play/pause in center area
+        if (p.x >= width * 0.25f && p.x <= width * 0.75f && p.y <= height * 0.70f) {
+            sendPropertyChange(PropertyChange.PlayPause, 0f)
+            lastTapTime = 0
+            return true
+        }
+        
+        if (now - lastTapTime < TAP_DURATION) {
+            // [ Left 28% ] [    Center    ] [ Right 28% ]
+            if (p.x <= width * 0.28f)
+                tapGestureLeft?.let { sendPropertyChange(it, -1f); return true }
+            else if (p.x >= width * 0.72f)
+                tapGestureRight?.let { sendPropertyChange(it, 1f); return true }
+            else
+                tapGestureCenter?.let { sendPropertyChange(it, 0f); return true }
+            lastTapTime = 0
+        } else {
+            lastTapTime = now
+        }
         return false
-    }
-    
-    // SINGLE TAP - Add play/pause in center area
-    if (p.x >= width * 0.25f && p.x <= width * 0.75f && p.y <= height * 0.70f) {
-        sendPropertyChange(PropertyChange.PlayPause, 0f)
-        lastTapTime = 0
-        return true
-    }
-    
-    if (now - lastTapTime < TAP_DURATION) {
-        // [ Left 28% ] [    Center    ] [ Right 28% ]
-        if (p.x <= width * 0.28f)
-            tapGestureLeft?.let { sendPropertyChange(it, -1f); return true }
-        else if (p.x >= width * 0.72f)
-            tapGestureRight?.let { sendPropertyChange(it, 1f); return true }
-        else
-            tapGestureCenter?.let { sendPropertyChange(it, 0f); return true }
-        lastTapTime = 0
-    } else {
-        lastTapTime = now
-    }
-    return false
     }
 
     private fun processMovement(p: PointF): Boolean {
+        if (state == State.HoldSpeed) return false
+
         // throttle events: only send updates when there's some movement compared to last update
         // 3 here is arbitrary
         if (PointF(lastPos.x - p.x, lastPos.y - p.y).length() < trigger / 3)
@@ -175,6 +193,7 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
                 sendPropertyChange(PropertyChange.Volume, CONTROL_VOLUME_MAX * dr)
             State.ControlBright ->
                 sendPropertyChange(PropertyChange.Bright, CONTROL_BRIGHT_MAX * dr)
+            State.HoldSpeed -> {}
         }
         return state != State.Up && state != State.Down
     }
@@ -220,10 +239,18 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         val point = PointF(e.x, e.y)
         when (e.action) {
             MotionEvent.ACTION_UP -> {
+                if (state == State.HoldSpeed) {
+                    sendPropertyChange(PropertyChange.HoldSpeedEnd, 0f)
+                    state = State.Up
+                    holdStartTime = 0
+                    return true
+                }
+                
                 gestureHandled = processMovement(point) or processTap(point)
                 if (state != State.Down)
                     sendPropertyChange(PropertyChange.Finalize, 0f)
                 state = State.Up
+                holdStartTime = 0
             }
             MotionEvent.ACTION_DOWN -> {
                 // deadzone on top/bottom
@@ -233,11 +260,29 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
                 processTap(point)
                 lastPos.set(point)
                 state = State.Down
+                
+                if (isInLeftoverArea(point)) {
+                    holdStartTime = SystemClock.uptimeMillis()
+                }
+                
                 // always return true on ACTION_DOWN to continue receiving events
                 gestureHandled = true
             }
             MotionEvent.ACTION_MOVE -> {
+                if (state == State.HoldSpeed) {
+                    return true
+                }
+                
                 gestureHandled = processMovement(point)
+                
+                if (state == State.Down && holdStartTime > 0) {
+                    val holdTime = SystemClock.uptimeMillis() - holdStartTime
+                    if (holdTime >= HOLD_DURATION && isInLeftoverArea(point)) {
+                        state = State.HoldSpeed
+                        sendPropertyChange(PropertyChange.HoldSpeedStart, 0f)
+                        return true
+                    }
+                }
             }
         }
         return gestureHandled
