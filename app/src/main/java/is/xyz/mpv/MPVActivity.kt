@@ -2047,8 +2047,8 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
                 }, 50)
             }, 50)
         }
-    }  // <-- ONLY ONE closing brace for the 'when' statement
-}  // <-- ONLY ONE closing brace for the 'onPropertyChange' method
+    }
+}
 
 companion object {
     private const val TAG = "mpv"
@@ -2072,4 +2072,5 @@ companion object {
     private const val STREAM_TYPE = AudioManager.STREAM_MUSIC
     // precision used by seekbar (1/s)
     private const val SEEK_BAR_PRECISION = 2
+}
 }
