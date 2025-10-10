@@ -196,12 +196,12 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         val midSpeed = (currentSpeed + targetSpeed) / 2
         
         // First step to middle speed immediately
-        player.speed = midSpeed
+        MPVLib.setPropertyString("speed", midSpeed.toString())
         currentSpeed = midSpeed
         
         // Second step to final speed after 150ms
         speedRampHandler.postDelayed({
-            player.speed = targetSpeed
+            MPVLib.setPropertyString("speed", targetSpeed.toString())
             currentSpeed = targetSpeed
         }, 150L)
     }
