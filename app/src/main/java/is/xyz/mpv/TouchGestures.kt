@@ -8,6 +8,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.view.MotionEvent
+import `is`.xyz.mpv.R` // ADDED: Explicit import for R class
 import kotlin.math.*
 
 enum class PropertyChange {
@@ -345,7 +346,6 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     companion object {
         private const val TAG = "mpv"
         
-        // FIX: Moved const val declarations here to resolve compiler error
         private const val LONG_PRESS_DURATION = 300L 
         private const val SEEK_SENSITIVITY_FACTOR = 0.20f 
         
