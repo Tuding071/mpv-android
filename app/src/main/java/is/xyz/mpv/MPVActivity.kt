@@ -84,11 +84,6 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     private lateinit var binding: PlayerBinding
     private lateinit var gestures: TouchGestures
 
-    // NEW: Speed ramp variables
-    private val speedRampHandler = Handler(Looper.getMainLooper())
-    private var currentSpeed = 1.0
-    private var wasPlayingBeforeSeek = false
-
     // convenience alias
     private val player get() = binding.player
 
@@ -102,12 +97,10 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
 
         override fun onStartTrackingTouch(seekBar: SeekBar) {
             userIsOperatingSeekbar = true
-            onSeekStart() // NEW: Pause on seek start
         }
 
         override fun onStopTrackingTouch(seekBar: SeekBar) {
             userIsOperatingSeekbar = false
-            onSeekEnd() // NEW: Resume on seek end
             showControls() // re-trigger display timeout
         }
     }
@@ -189,42 +182,6 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     private var smoothSeekGesture = false
     /* * */
 
-    // NEW: Simple speed ramp function
-    private fun rampSpeed(targetSpeed: Double) {
-        speedRampHandler.removeCallbacksAndMessages(null)
-        
-        val midSpeed = (currentSpeed + targetSpeed) / 2
-        
-        // First step to middle speed immediately
-        MPVLib.setPropertyString("speed", midSpeed.toString())
-        currentSpeed = midSpeed
-        
-        // Second step to final speed after 150ms
-        speedRampHandler.postDelayed({
-            MPVLib.setPropertyString("speed", targetSpeed.toString())
-            currentSpeed = targetSpeed
-        }, 150L)
-    }
-
-    // NEW: Pause on seek start
-    private fun onSeekStart() {
-        if (!psc.pause) {
-            wasPlayingBeforeSeek = true
-            player.paused = true
-        } else {
-            wasPlayingBeforeSeek = false
-        }
-        showControls()
-    }
-
-    // NEW: Resume on seek end
-    private fun onSeekEnd() {
-        if (wasPlayingBeforeSeek) {
-            player.paused = false
-        }
-        wasPlayingBeforeSeek = false
-    }
-
     @SuppressLint("ClickableViewAccessibility")
     private fun initListeners() {
         with (binding) {
@@ -288,7 +245,17 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     // Activity lifetime
 
     override fun onCreate(icicle: Bundle?) {
-        super.onCreate(icicle)
+        
+    // --- Smooth scrubbing (hr-seek) initialization injected ---
+    try {
+        // Enable high-resolution seeking for frame-accurate scrubbing
+        MPVLib.setPropertyString("hr-seek", "yes")
+        MPVLib.setPropertyString("hr-seek-framedrop", "no")
+    } catch (e: Exception) {
+        // If MPVLib isn't ready yet, it'll be safe to set later after initialization.
+    }
+    // --- end injection ---
+super.onCreate(icicle)
 
         // Do these here and not in MainActivity because mpv can be launched from a file browser
         Utils.copyAssets(this)
@@ -2065,10 +2032,6 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
                 val keycode = 0x10002 + diff.toInt()
                 MPVLib.command(arrayOf("keypress", "0x%x".format(keycode)))
             }
-            // NEW: Handle speed shift
-            PropertyChange.SpeedShift -> {
-                rampSpeed(diff.toDouble())
-            }
         }
     }
 
@@ -2095,4 +2058,60 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         // precision used by seekbar (1/s)
         private const val SEEK_BAR_PRECISION = 2
     }
+
+    // --- Smooth scrubbing helper fields and methods (injected) ---
+    private var isPausedForSeek: Boolean = false
+    private var lastPreviewUpdate: Long = 0L
+    private var previewPosition: Float = 0f
+
+    fun setPausedForSeek(paused: Boolean) {
+        isPausedForSeek = paused
+        try {
+            MPVLib.setPropertyBoolean("pause", paused)
+        } catch (e: Exception) {
+            // ignore if MPVLib not ready yet
+        }
+    }
+
+    fun previewSeek(position: Float) {
+        // Throttle frame updates to avoid flooding MPV: default 80 ms (~12 FPS)
+        val now = System.currentTimeMillis()
+        if (now - lastPreviewUpdate < 80) return
+        lastPreviewUpdate = now
+        previewPosition = position
+
+        // Show that frame instantly with frame-accurate seek
+        try {
+            MPVLib.command(arrayOf("seek", position.toString(), "absolute+exact"))
+        } catch (e: Exception) {
+            // fallback: try absolute seek
+            try { MPVLib.command(arrayOf("seek", position.toString(), "absolute")) } catch (_: Exception) {}
+        }
+
+        // If gestureTextView exists, show feedback (safe-guarded)
+        try {
+            gestureTextView?.text = formatTime(position)
+            gestureTextView?.visibility = android.view.View.VISIBLE
+        } catch (_: Exception) {}
+    }
+
+    fun applySeek() {
+        if (isPausedForSeek) {
+            try {
+                // Seek to final position (absolute) and resume playback
+                MPVLib.command(arrayOf("seek", previewPosition.toString(), "absolute"))
+            } catch (e: Exception) {
+                // ignore
+            }
+            setPausedForSeek(false)
+            try { gestureTextView?.visibility = android.view.View.GONE } catch (_: Exception) {}
+        }
+    }
+
+    private fun formatTime(seconds: Float): String {
+        val mins = (seconds / 60).toInt()
+        val secs = (seconds % 60).toInt()
+        return String.format("%02d:%02d", mins, secs)
+    }
+    // --- end injected methods ---
 }
