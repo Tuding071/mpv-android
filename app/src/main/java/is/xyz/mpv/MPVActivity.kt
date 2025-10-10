@@ -245,17 +245,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     // Activity lifetime
 
     override fun onCreate(icicle: Bundle?) {
-        
-    // --- Smooth scrubbing (hr-seek) initialization injected ---
-    try {
-        // Enable high-resolution seeking for frame-accurate scrubbing
-        MPVLib.setPropertyString("hr-seek", "yes")
-        MPVLib.setPropertyString("hr-seek-framedrop", "no")
-    } catch (e: Exception) {
-        // If MPVLib isn't ready yet, it'll be safe to set later after initialization.
-    }
-    // --- end injection ---
-super.onCreate(icicle)
+        super.onCreate(icicle)
 
         // Do these here and not in MainActivity because mpv can be launched from a file browser
         Utils.copyAssets(this)
@@ -2058,60 +2048,4 @@ super.onCreate(icicle)
         // precision used by seekbar (1/s)
         private const val SEEK_BAR_PRECISION = 2
     }
-
-    // --- Smooth scrubbing helper fields and methods (injected) ---
-    private var isPausedForSeek: Boolean = false
-    private var lastPreviewUpdate: Long = 0L
-    private var previewPosition: Float = 0f
-
-    fun setPausedForSeek(paused: Boolean) {
-        isPausedForSeek = paused
-        try {
-            MPVLib.setPropertyBoolean("pause", paused)
-        } catch (e: Exception) {
-            // ignore if MPVLib not ready yet
-        }
-    }
-
-    fun previewSeek(position: Float) {
-        // Throttle frame updates to avoid flooding MPV: default 80 ms (~12 FPS)
-        val now = System.currentTimeMillis()
-        if (now - lastPreviewUpdate < 80) return
-        lastPreviewUpdate = now
-        previewPosition = position
-
-        // Show that frame instantly with frame-accurate seek
-        try {
-            MPVLib.command(arrayOf("seek", position.toString(), "absolute+exact"))
-        } catch (e: Exception) {
-            // fallback: try absolute seek
-            try { MPVLib.command(arrayOf("seek", position.toString(), "absolute")) } catch (_: Exception) {}
-        }
-
-        // If gestureTextView exists, show feedback (safe-guarded)
-        try {
-            gestureTextView?.text = formatTime(position)
-            gestureTextView?.visibility = android.view.View.VISIBLE
-        } catch (_: Exception) {}
-    }
-
-    fun applySeek() {
-        if (isPausedForSeek) {
-            try {
-                // Seek to final position (absolute) and resume playback
-                MPVLib.command(arrayOf("seek", previewPosition.toString(), "absolute"))
-            } catch (e: Exception) {
-                // ignore
-            }
-            setPausedForSeek(false)
-            try { gestureTextView?.visibility = android.view.View.GONE } catch (_: Exception) {}
-        }
-    }
-
-    private fun formatTime(seconds: Float): String {
-        val mins = (seconds / 60).toInt()
-        val secs = (seconds % 60).toInt()
-        return String.format("%02d:%02d", mins, secs)
-    }
-    // --- end injected methods ---
 }
