@@ -120,15 +120,17 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     }
 
     fun loadPreferences(sh: SharedPreferences, r: Resources) {
-        fun get(key: String, res: Int) = sh.getString(key, r.getString(res))!!
+        // FIX: Helper function to safely get a String, using Resource ID for the default.
+        fun getPrefString(key: String, defaultResId: Int) = 
+            sh.getString(key, r.getString(defaultResId)) ?: r.getString(defaultResId)
 
-        gestureHoriz = map[get("gesture_move_horiz", r.getString(R.string.pref_gesture_move_horiz_default))] ?: State.Down
-        gestureVertLeft = map[get("gesture_move_vert_left", r.getString(R.string.pref_gesture_move_vert_left_default))] ?: State.Down
-        gestureVertRight = map[get("gesture_move_vert_right", r.getString(R.string.pref_gesture_move_vert_right_default))] ?: State.Down
+        gestureHoriz = map[getPrefString("gesture_move_horiz", R.string.pref_gesture_move_horiz_default)] ?: State.Down
+        gestureVertLeft = map[getPrefString("gesture_move_vert_left", R.string.pref_gesture_move_vert_left_default)] ?: State.Down
+        gestureVertRight = map[getPrefString("gesture_move_vert_right", R.string.pref_gesture_move_vert_right_default)] ?: State.Down
 
-        tapGestureLeft = map2[get("gesture_tap_left", r.getString(R.string.pref_gesture_tap_left_default))]
-        tapGestureCenter = map2[get("gesture_tap_center", r.getString(R.string.pref_gesture_tap_center_default))]
-        tapGestureRight = map2[get("gesture_tap_right", r.getString(R.string.pref_gesture_tap_right_default))]
+        tapGestureLeft = map2[getPrefString("gesture_tap_left", R.string.pref_gesture_tap_left_default)]
+        tapGestureCenter = map2[getPrefString("gesture_tap_center", R.string.pref_gesture_tap_center_default)]
+        tapGestureRight = map2[getPrefString("gesture_tap_right", R.string.pref_gesture_tap_right_default)]
     }
 
     fun onTouchEvent(e: MotionEvent): Boolean {
@@ -183,7 +185,6 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
                 gestureHandled = true
             }
             MotionEvent.ACTION_MOVE -> {
-                // FIX: Used 'point' instead of 'p'
                 val dist = PointF(point.x - initialPos.x, point.y - initialPos.y).length() 
                 
                 // If movement exceeds threshold, cancel long press
