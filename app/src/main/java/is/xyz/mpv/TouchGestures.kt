@@ -8,7 +8,6 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.view.MotionEvent
-import `is`.xyz.mpv.R
 import kotlin.math.*
 
 enum class PropertyChange {
@@ -22,8 +21,8 @@ enum class PropertyChange {
     SeekFixed,
     PlayPause,
     Custom,
-    // NEW: For speed shifting (2.0 to ramp up, 1.0 to ramp down)
-    SpeedShift, 
+    // NEW: For speed shifting
+    SpeedShift,
 }
 
 internal interface TouchGesturesObserver {
@@ -39,29 +38,33 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         ControlVolume,
         ControlBright,
         // NEW: State for long press speed shift
-        ControlSpeedShift, 
+        ControlSpeedShift,
     }
 
     private var state = State.Up
-    // CHANGE: Made internal for MPVActivity to access for gesture-type check
-    internal var stateDirection = 0
-    
+    // relevant movement direction for the current state (0=H, 1=V)
+    private var stateDirection = 0
+
     // timestamp of the last tap (ACTION_UP)
     private var lastTapTime = 0L
     // when the current gesture began
     private var lastDownTime = 0L
 
-    // CHANGE: Made internal for MPVActivity to access for gesture-type check
-    internal var initialPos = PointF()
+    // where user initially placed their finger (ACTION_DOWN)
+    private var initialPos = PointF()
     // last non-throttled processed position
     private var lastPos = PointF()
-    
-    // NEW: For velocity-based seeking
-    private var lastSeekUpdateTime = 0L
-    private var lastSeekUpdatePos = PointF()
 
-    // CHANGE: Made internal for MPVActivity to access for gesture-type check
-    internal var width = 0f
+    // NEW: Handler for long press detection
+    private val handler = Handler(Looper.getMainLooper())
+    private val longPressRunnable = Runnable {
+        if (state == State.Down) {
+            state = State.ControlSpeedShift
+            sendPropertyChange(PropertyChange.SpeedShift, 2.0f)
+        }
+    }
+
+    private var width = 0f
     private var height = 0f
     // minimum movement which triggers a Control state
     private var trigger = 0f
@@ -70,243 +73,48 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     private var gestureHoriz = State.Down
     private var gestureVertLeft = State.Down
     private var gestureVertRight = State.Down
+    private var tapGestureLeft : PropertyChange? = null
+    private var tapGestureCenter : PropertyChange? = null
+    private var tapGestureRight : PropertyChange? = null
 
-    // map gesture-name to PropertyChange
-    private val map = mapOf(
-        "none" to State.Down,
-        "seek" to State.ControlSeek,
-        "volume" to State.ControlVolume,
-        "bright" to State.ControlBright
-    )
-
-    // map tap-gesture-name to PropertyChange
-    private val map2 = mapOf(
-        "none" to null,
-        "seek_fixed" to PropertyChange.SeekFixed,
-        "play_pause" to PropertyChange.PlayPause,
-        "custom" to PropertyChange.Custom,
-    )
-
-    private var tapGestureLeft: PropertyChange? = null
-    private var tapGestureCenter: PropertyChange? = null
-    private var tapGestureRight: PropertyChange? = null
-
-    private val DEADZONE = 10 // top/bottom deadzone percentage
-
-    private val TAP_DURATION = 350L
-
-    // total height that changes volume/brightness from 0 to 100
-    private var totalHeight = 0f
-    
-    // Handler and Runnable for Long Press detection
-    private val handler = Handler(Looper.getMainLooper())
-    private val longPressRunnable = Runnable {
-        // Long press detected (300ms elapsed)
-        if (state == State.Down) {
-            state = State.ControlSpeedShift
-            // Send command to start ramp up to 2.0x
-            sendPropertyChange(PropertyChange.SpeedShift, 2.0f)
-        }
+    private inline fun checkFloat(vararg n: Float): Boolean {
+        return !n.any { it.isInfinite() || it.isNaN() }
+    }
+    private inline fun assertFloat(vararg n: Float) {
+        if (!checkFloat(*n))
+            throw IllegalArgumentException()
     }
 
-    private fun sendPropertyChange(p: PropertyChange, diff: Float) {
-        observer.onPropertyChange(p, diff)
+    fun setMetrics(width: Float, height: Float) {
+        assertFloat(width, height)
+        this.width = width
+        this.height = height
+        trigger = min(width, height) / TRIGGER_RATE
     }
 
-    fun setScreenDimensions(w: Int, h: Int) {
-        width = w.toFloat()
-        height = h.toFloat()
-        trigger = min(w, h) / 15f
-        totalHeight = h.toFloat() * 0.7f
-    }
+    companion object {
+        private const val TAG = "mpv"
 
-    fun loadPreferences(sh: SharedPreferences, r: Resources) {
-        // Helper function to safely get a String, using Resource ID for the default.
-        fun getPrefString(key: String, defaultResId: Int): String {
-            return sh.getString(key, r.getString(defaultResId)) ?: r.getString(defaultResId)
-        }
+        // ratio for trigger, 1/Xth of minimum dimension
+        // for tap gestures this is the distance that must *not* be moved for it to trigger
+        private const val TRIGGER_RATE = 30
 
-        gestureHoriz = map[getPrefString("gesture_move_horiz", R.string.pref_gesture_move_horiz_default)] ?: State.Down
-        gestureVertLeft = map[getPrefString("gesture_move_vert_left", R.string.pref_gesture_move_vert_left_default)] ?: State.Down
-        gestureVertRight = map[getPrefString("gesture_move_vert_right", R.string.pref_gesture_move_vert_right_default)] ?: State.Down
+        // maximum duration between taps (ms) for a double tap to count
+        private const val TAP_DURATION = 300L
 
-        tapGestureLeft = map2[getPrefString("gesture_tap_left", R.string.pref_gesture_tap_left_default)]
-        tapGestureCenter = map2[getPrefString("gesture_tap_center", R.string.pref_gesture_tap_center_default)]
-        tapGestureRight = map2[getPrefString("gesture_tap_right", R.string.pref_gesture_tap_right_default)]
-    }
+        // full sweep from left side to right side is 2:30
+        private const val CONTROL_SEEK_MAX = 150f
 
-    fun onTouchEvent(e: MotionEvent): Boolean {
-        if (width < 1 || height < 1) {
-            Log.w(TAG, "TouchGestures: width or height not set!")
-            return false
-        }
-        if (!checkFloat(e.x, e.y)) {
-            Log.w(TAG, "TouchGestures: ignoring invalid point ${e.x} ${e.y}")
-            return false
-        }
-        var gestureHandled = false
-        val point = PointF(e.x, e.y)
-        when (e.action) {
-            MotionEvent.ACTION_UP -> {
-                handler.removeCallbacks(longPressRunnable) // Cancel any pending long press
-                
-                // Handle speed shift release
-                if (state == State.ControlSpeedShift) {
-                    sendPropertyChange(PropertyChange.SpeedShift, 1.0f) // Command to start ramp down to 1.0x
-                    state = State.Up
-                    return true // Consume the UP event
-                }
-                
-                gestureHandled = processMovement(point) or processTap(point)
-                if (state != State.Down)
-                    sendPropertyChange(PropertyChange.Finalize, 0f)
-                state = State.Up
-                
-                // Reset seek tracking variables
-                lastSeekUpdateTime = 0L
-                lastSeekUpdatePos.set(0f, 0f)
-            }
-            MotionEvent.ACTION_DOWN -> {
-                // deadzone on top/bottom
-                if (e.y < height * DEADZONE / 100 || e.y > height * (100 - DEADZONE) / 100)
-                    return false
-                    
-                initialPos.set(point)
-                processTap(point)
-                lastPos.set(point)
-                state = State.Down
-                
-                // Start long press timer
-                handler.postDelayed(longPressRunnable, LONG_PRESS_DURATION)
+        // same as below, we rescale it inside MPVActivity
+        private const val CONTROL_VOLUME_MAX = 1.5f
 
-                // Initialize seek tracking variables
-                lastSeekUpdateTime = SystemClock.uptimeMillis()
-                lastSeekUpdatePos.set(point)
+        // brightness is scaled 0..1; max's not 1f so that user does not have to start from the bottom
+        // if they want to go from none to full brightness
+        private const val CONTROL_BRIGHT_MAX = 1.5f
 
-                // always return true on ACTION_DOWN to continue receiving events
-                gestureHandled = true
-            }
-            MotionEvent.ACTION_MOVE -> {
-                val dist = PointF(point.x - initialPos.x, point.y - initialPos.y).length() 
-                
-                // If movement exceeds threshold, cancel long press
-                if (state == State.Down && dist > trigger) {
-                    handler.removeCallbacks(longPressRunnable)
-                }
-
-                gestureHandled = processMovement(point)
-                lastPos.set(point)
-            }
-        }
-        return gestureHandled
-    }
-
-    private fun checkFloat(x: Float, y: Float): Boolean = x.isFinite() && y.isFinite()
-
-    private fun processMovement(p: PointF): Boolean {
-        // If in speed shift state, block all other movement gestures
-        if (state == State.ControlSpeedShift) {
-            return true
-        }
-        
-        val dx = p.x - initialPos.x
-        val dy = p.y - initialPos.y
-        val dist = PointF(dx, dy).length()
-
-        // if the state is down, we check if we should change to a control state
-        if (state == State.Down) {
-            if (dist < trigger)
-                return false
-
-            // check if movement is mostly horizontal (stateDirection = 0) or vertical (stateDirection = 1)
-            stateDirection = if (abs(dx) > abs(dy)) 0 else 1
-
-            if (stateDirection == 0) {
-                state = gestureHoriz
-            } else {
-                state = if (p.x < width / 2) gestureVertLeft else gestureVertRight
-            }
-
-            if (state == State.Down)
-                return false
-
-            // a control state has begun, notify
-            sendPropertyChange(PropertyChange.Init, 0f)
-            // Initialize last position for continuous updates
-            lastPos.set(p)
-            lastSeekUpdatePos.set(p)
-            lastSeekUpdateTime = SystemClock.uptimeMillis()
-            return true
-        } else if (state == State.Up) {
-            return false
-        }
-
-        // we are in a control state, check for updates
-
-        val d = if (stateDirection == 0) p.x - lastPos.x else p.y - lastPos.y
-        
-        if (state == State.ControlSeek) {
-            // Smart Throttling Logic for Smooth Seeking
-            val now = SystemClock.uptimeMillis()
-            val timeSinceLastUpdate = now - lastSeekUpdateTime
-            
-            // d_total is the distance since the last *sent seek command*
-            val d_total = if (stateDirection == 0) p.x - lastSeekUpdatePos.x else p.y - lastSeekUpdatePos.y
-            val d_total_abs = abs(d_total)
-
-            // Rule 1: Always update on slow movement for precision (THRESHOLD_UPDATE_MIN)
-            // Rule 2: Always update if a timeout has been reached (SEEK_UPDATE_TIMEOUT)
-            // Rule 3: For fast movement, require a larger distance to update (THRESHOLD_UPDATE_MAX) to skip frames
-            
-            val requiredDistance = if (timeSinceLastUpdate > SEEK_UPDATE_TIMEOUT) {
-                THRESHOLD_UPDATE_MIN // Force update if too slow/stalled
-            } else {
-                // Dynamic check: Use THRESHOLD_UPDATE_MIN for slow/precise, and THRESHOLD_UPDATE_MAX for fast
-                val speedFactor = min(1f, max(0f, (now - lastDownTime).toFloat() / 500f))
-                (THRESHOLD_UPDATE_MIN + (THRESHOLD_UPDATE_MAX - THRESHOLD_UPDATE_MIN) * speedFactor).toInt()
-            }
-            
-            if (d_total_abs < requiredDistance && timeSinceLastUpdate < SEEK_UPDATE_TIMEOUT) {
-                return true // Still handling gesture, but no update needed yet
-            }
-
-            // Apply 80% sensitivity reduction (multiply by 0.20)
-            val diff = -d_total / width * 100f * SEEK_SENSITIVITY_FACTOR 
-
-            if (diff != 0f) {
-                sendPropertyChange(PropertyChange.Seek, diff)
-                // Reset tracking variables after sending the seek command
-                lastSeekUpdateTime = now
-                lastSeekUpdatePos.set(p)
-            }
-            
-            lastPos.set(p)
-            return true
-
-        } else {
-            // Logic for Volume/Bright (No throttling required)
-            val d = if (stateDirection == 0) p.x - lastPos.x else p.y - lastPos.y
-            if (abs(d) < THRESHOLD_UPDATE_MIN)
-                return true 
-                
-            val diff = when (state) {
-                State.ControlVolume, State.ControlBright -> d / totalHeight // always vertical
-                else -> 0f
-            }
-
-            if (diff == 0f)
-                return true
-
-            val property = when (state) {
-                State.ControlVolume -> PropertyChange.Volume
-                State.ControlBright -> PropertyChange.Bright
-                else -> return true
-            }
-
-            sendPropertyChange(property, diff)
-            lastPos.set(p)
-            return true
-        }
+        // do not trigger on X% of screen top/bottom
+        // this is so that user can open android status bar
+        private const val DEADZONE = 5
     }
 
     private fun processTap(p: PointF): Boolean {
@@ -327,7 +135,6 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
             return false
         }
         if (now - lastTapTime < TAP_DURATION) {
-            // This is the double tap path.
             // [ Left 28% ] [    Center    ] [ Right 28% ]
             if (p.x <= width * 0.28f)
                 tapGestureLeft?.let { sendPropertyChange(it, -1f); return true }
@@ -337,22 +144,131 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
                 tapGestureCenter?.let { sendPropertyChange(it, 0f); return true }
             lastTapTime = 0
         } else {
-            // Single tap path for Pause/Play and UI Toggle
-            sendPropertyChange(PropertyChange.PlayPause, 0f)
             lastTapTime = now
         }
         return false
     }
 
-    companion object {
-        private const val TAG = "mpv"
+    private fun processMovement(p: PointF): Boolean {
+        // NEW: Block other gestures during speed shift
+        if (state == State.ControlSpeedShift) {
+            return true
+        }
         
-        private const val LONG_PRESS_DURATION = 300L 
-        private const val SEEK_SENSITIVITY_FACTOR = 0.20f 
-        
-        private const val THRESHOLD_MOVE = 2
-        private const val THRESHOLD_UPDATE_MIN = 1 
-        private const val THRESHOLD_UPDATE_MAX = 5
-        private const val SEEK_UPDATE_TIMEOUT = 100L
+        // throttle events: only send updates when there's some movement compared to last update
+        // 3 here is arbitrary
+        if (PointF(lastPos.x - p.x, lastPos.y - p.y).length() < trigger / 3)
+            return false
+        lastPos.set(p)
+
+        assertFloat(initialPos.x, initialPos.y)
+        val dx = p.x - initialPos.x
+        val dy = p.y - initialPos.y
+        val dr = if (stateDirection == 0) (dx / width) else (-dy / height)
+
+        when (state) {
+            State.Up -> {}
+            State.Down -> {
+                // we might get into one of Control states if user moves enough
+                if (abs(dx) > trigger) {
+                    state = gestureHoriz
+                    stateDirection = 0
+                } else if (abs(dy) > trigger) {
+                    state = if (initialPos.x > width / 2) gestureVertRight else gestureVertLeft
+                    stateDirection = 1
+                }
+                // send Init so that it has a chance to cache values before we start modifying them
+                if (state != State.Down)
+                    sendPropertyChange(PropertyChange.Init, 0f)
+            }
+            State.ControlSeek ->
+                sendPropertyChange(PropertyChange.Seek, CONTROL_SEEK_MAX * dr)
+            State.ControlVolume ->
+                sendPropertyChange(PropertyChange.Volume, CONTROL_VOLUME_MAX * dr)
+            State.ControlBright ->
+                sendPropertyChange(PropertyChange.Bright, CONTROL_BRIGHT_MAX * dr)
+            State.ControlSpeedShift -> {
+                // Speed shift is handled by long press only, no movement processing needed
+            }
+        }
+        return state != State.Up && state != State.Down
+    }
+
+    private fun sendPropertyChange(p: PropertyChange, diff: Float) {
+        observer.onPropertyChange(p, diff)
+    }
+
+    fun syncSettings(prefs: SharedPreferences, resources: Resources) {
+        val get: (String, Int) -> String = { key, defaultRes ->
+            val v = prefs.getString(key, "")
+            if (v.isNullOrEmpty()) resources.getString(defaultRes) else v
+        }
+        val map = mapOf(
+            "bright" to State.ControlBright,
+            "seek" to State.ControlSeek,
+            "volume" to State.ControlVolume
+        )
+        val map2 = mapOf(
+            "seek" to PropertyChange.SeekFixed,
+            "playpause" to PropertyChange.PlayPause,
+            "custom" to PropertyChange.Custom
+        )
+
+        gestureHoriz = map[get("gesture_horiz", R.string.pref_gesture_horiz_default)] ?: State.Down
+        gestureVertLeft = map[get("gesture_vert_left", R.string.pref_gesture_vert_left_default)] ?: State.Down
+        gestureVertRight = map[get("gesture_vert_right", R.string.pref_gesture_vert_right_default)] ?: State.Down
+        tapGestureLeft = map2[get("gesture_tap_left", R.string.pref_gesture_tap_left_default)]
+        tapGestureCenter = map2[get("gesture_tap_center", R.string.pref_gesture_tap_center_default)]
+        tapGestureRight = map2[get("gesture_tap_right", R.string.pref_gesture_tap_right_default)]
+    }
+
+    fun onTouchEvent(e: MotionEvent): Boolean {
+        if (width < 1 || height < 1) {
+            Log.w(TAG, "TouchGestures: width or height not set!")
+            return false
+        }
+        if (!checkFloat(e.x, e.y)) {
+            Log.w(TAG, "TouchGestures: ignoring invalid point ${e.x} ${e.y}")
+            return false
+        }
+        var gestureHandled = false
+        val point = PointF(e.x, e.y)
+        when (e.action) {
+            MotionEvent.ACTION_UP -> {
+                // NEW: Cancel long press and handle speed shift release
+                handler.removeCallbacks(longPressRunnable)
+                
+                // Handle speed shift release
+                if (state == State.ControlSpeedShift) {
+                    sendPropertyChange(PropertyChange.SpeedShift, 1.0f)
+                    state = State.Up
+                    return true
+                }
+                
+                gestureHandled = processMovement(point) or processTap(point)
+                if (state != State.Down)
+                    sendPropertyChange(PropertyChange.Finalize, 0f)
+                state = State.Up
+            }
+            MotionEvent.ACTION_DOWN -> {
+                // deadzone on top/bottom
+                if (e.y < height * DEADZONE / 100 || e.y > height * (100 - DEADZONE) / 100)
+                    return false
+                initialPos.set(point)
+                processTap(point)
+                lastPos.set(point)
+                state = State.Down
+                
+                // NEW: Start long press timer
+                handler.postDelayed(longPressRunnable, 300L)
+                
+                // always return true on ACTION_DOWN to continue receiving events
+                gestureHandled = true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                gestureHandled = processMovement(point)
+            }
+        }
+        return gestureHandled
     }
 }
