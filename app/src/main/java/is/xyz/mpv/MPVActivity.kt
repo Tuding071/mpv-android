@@ -1962,7 +1962,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
             val duration = (psc.duration / 1000f)
             if (duration == 0f || initialSeek < 0)
                 return
-            if (smoothSeekGesture && pausedForSeek == 0) {
+            if (pausedForSeek == 0) {
                 pausedForSeek = if (psc.pause) 2 else 1
                 if (pausedForSeek == 1)
                     player.paused = true
