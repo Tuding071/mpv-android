@@ -1923,7 +1923,6 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     private var initialBright = 0f
     private var initialVolume = 0
     private var maxVolume = 0
-    private var lastExactSeekTime = 0L
     /** 0 = initial, 1 = paused, 2 = was already paused */
     private var pausedForSeek = 0
 
@@ -1959,36 +1958,27 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
             gestureTextView.text = ""
         }
         PropertyChange.Seek -> {
-    // disable seeking when duration is unknown
     val duration = (psc.duration / 1000f)
-    if (duration == 0f || initialSeek < 0)
-        return
+    if (duration == 0f || initialSeek < 0) return
+    
+    // Universal pause (keep this)
     if (pausedForSeek == 0) {
         pausedForSeek = if (psc.pause) 2 else 1
-        if (pausedForSeek == 1)
-            player.paused = true
+        if (pausedForSeek == 1) player.paused = true
     }
 
     val newPosExact = (initialSeek + diff).coerceIn(0f, duration)
     
-    // 33ms throttle for seek commands
-    val now = SystemClock.uptimeMillis()
-    if (now - lastExactSeekTime > 33) {
-        lastExactSeekTime = now
-        
-        if (smoothSeekGesture) {
-            player.timePos = newPosExact.toDouble() // (exact seek)
-        } else {
-            // seek faster than assigning to timePos but less precise
-            MPVLib.command(arrayOf("seek", "$newPosExact", "absolute+keyframes"))
-        }
+    // NO THROTTLE - just normal seeking
+    if (smoothSeekGesture) {
+        player.timePos = newPosExact.toDouble()
+    } else {
+        MPVLib.command(arrayOf("seek", "$newPosExekact", "absolute+keyframes"))
     }
 
+    // UI updates
     val newPos = newPosExact.roundToInt()
     val newDiff = (newPosExact - initialSeek).roundToInt()
-    // Note: don't call updatePlaybackPos() here because mpv will seek a timestamp
-    // actually present in the file, and not the exact one we specified.
-
     val posText = Utils.prettyTime(newPos)
     val diffText = Utils.prettyTime(newDiff, true)
     gestureTextView.text = getString(R.string.ui_seek_distance, posText, diffText)
