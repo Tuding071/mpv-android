@@ -1973,7 +1973,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     if (smoothSeekGesture) {
         player.timePos = newPosExact.toDouble()
     } else {
-        MPVLib.command(arrayOf("seek", "$newPosExekact", "absolute+keyframes"))
+        MPVLib.command(arrayOf("seek", "$newPosExact", "absolute+keyframes"))
     }
 
     // UI updates
