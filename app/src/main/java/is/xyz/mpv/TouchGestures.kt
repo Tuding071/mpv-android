@@ -160,11 +160,7 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
 
     private fun processMovement(p: PointF): Boolean {
         if (state == State.HoldSpeed) return false
-
-        // throttle events: only send updates when there's some movement compared to last update
-        // 3 here is arbitrary
-        if (PointF(lastPos.x - p.x, lastPos.y - p.y).length() < trigger / 3)
-            return false
+        
         lastPos.set(p)
 
         assertFloat(initialPos.x, initialPos.y)
