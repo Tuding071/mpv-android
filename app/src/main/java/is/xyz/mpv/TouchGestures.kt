@@ -102,7 +102,7 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         private const val TAP_DURATION = 300L
 
         // full sweep from left side to right side is 2:30
-        private const val CONTROL_SEEK_MAX = 150f
+        private const val CONTROL_SEEK_MAX = 10f
 
         // same as below, we rescale it inside MPVActivity
         private const val CONTROL_VOLUME_MAX = 1.5f
