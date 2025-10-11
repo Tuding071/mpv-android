@@ -56,7 +56,7 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
 
     private var totalPixelMovement = 0f
     private val PIXEL_SEEK_TRIGGER = 12f
-    private const val MS_PER_SEEK = 70L
+    private val MS_PER_SEEK = 70L
 
     private var width = 0f
     private var height = 0f
