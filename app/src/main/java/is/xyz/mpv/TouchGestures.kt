@@ -54,6 +54,10 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     // last non-throttled processed position
     private var lastPos = PointF()
 
+    private var totalPixelMovement = 0f
+    private val PIXEL_SEEK_TRIGGER = 12f
+    private const val MS_PER_SEEK = 70L
+
     private var width = 0f
     private var height = 0f
     // minimum movement which triggers a Control state
