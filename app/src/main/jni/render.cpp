@@ -1,7 +1,5 @@
 #include <jni.h>
-
 #include <mpv/client.h>
-
 #include "jni_utils.h"
 #include "log.h"
 #include "globals.h"
@@ -23,6 +21,8 @@ jni_func(void, attachSurface, jobject surface_) {
     int result = mpv_set_option(g_mpv, "wid", MPV_FORMAT_INT64, &wid);
     if (result < 0)
          ALOGE("mpv_set_option(wid) returned error %s", mpv_error_string(result));
+
+    // Force renderer to wake immediately
     mpv_wakeup(g_mpv);
 }
 
