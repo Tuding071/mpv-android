@@ -102,6 +102,7 @@ jni_func(void, command, jobjectArray jarray) {
         arguments[i] = env->GetStringUTFChars((jstring)env->GetObjectArrayElement(jarray, i), NULL);
 
     mpv_command(g_mpv, arguments);
+    mpv_wakeup(g_mpv);
 
     for (int i = 0; i < len; ++i)
         env->ReleaseStringUTFChars((jstring)env->GetObjectArrayElement(jarray, i), arguments[i]);
