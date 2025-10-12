@@ -49,8 +49,9 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     private var initialPos = PointF()
     private var lastPos = PointF()
 
+    // sensitivity + movement accumulator
     private var totalPixelMovement = 0f
-    private val PIXEL_SEEK_TRIGGER = 1200f   // lower = more sensitive, higher = slower
+    private val PIXEL_SEEK_TRIGGER = 180f   // lower = more sensitive, higher = slower
     private val MS_PER_SEEK = 80L           // ms jump per seek step
 
     private var width = 0f
@@ -63,9 +64,9 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     private var gestureHoriz = State.Down
     private var gestureVertLeft = State.Down
     private var gestureVertRight = State.Down
-    private var tapGestureLeft : PropertyChange? = null
-    private var tapGestureCenter : PropertyChange? = null
-    private var tapGestureRight : PropertyChange? = null
+    private var tapGestureLeft: PropertyChange? = null
+    private var tapGestureCenter: PropertyChange? = null
+    private var tapGestureRight: PropertyChange? = null
 
     private inline fun checkFloat(vararg n: Float): Boolean {
         return !n.any { it.isInfinite() || it.isNaN() }
@@ -136,45 +137,61 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         return false
     }
 
+    // --- improved smooth seeking logic ---
     private fun processMovement(p: PointF): Boolean {
         if (state == State.HoldSpeed) return false
 
+        val diffX = p.x - lastPos.x
+        val diffY = p.y - lastPos.y
         lastPos.set(p)
-        assertFloat(initialPos.x, initialPos.y)
-
-        val dx = p.x - initialPos.x
-        val dy = p.y - initialPos.y
 
         when (state) {
-            State.Up -> {}
+            State.Up -> return false
+
             State.Down -> {
+                val dx = p.x - initialPos.x
+                val dy = p.y - initialPos.y
+
                 if (abs(dx) > trigger) {
                     state = gestureHoriz
                     stateDirection = 0
+                    totalPixelMovement = 0f   // reset on new seek start
+                    sendPropertyChange(PropertyChange.Init, 0f)
                 } else if (abs(dy) > trigger) {
                     state = if (initialPos.x > width / 2) gestureVertRight else gestureVertLeft
                     stateDirection = 1
-                }
-                if (state != State.Down)
                     sendPropertyChange(PropertyChange.Init, 0f)
+                }
             }
+
             State.ControlSeek -> {
-                totalPixelMovement += dx
-                if (abs(totalPixelMovement) >= PIXEL_SEEK_TRIGGER) {
-                    val steps = (totalPixelMovement / PIXEL_SEEK_TRIGGER).coerceIn(-5f, 5f)
+                totalPixelMovement += diffX
+                totalPixelMovement = totalPixelMovement.coerceIn(-2400f, 2400f)
+
+                // smooth dynamic scaling — faster swipes a bit stronger
+                val scaledTrigger = PIXEL_SEEK_TRIGGER * (1f - (abs(diffX) / width).coerceIn(0f, 0.8f) * 0.6f)
+
+                if (abs(totalPixelMovement) >= scaledTrigger) {
+                    val steps = (totalPixelMovement / scaledTrigger)
+                        .coerceIn(-5f, 5f)
                     val seekMs = steps * MS_PER_SEEK
                     sendPropertyChange(PropertyChange.Seek, seekMs)
-                    totalPixelMovement -= steps * PIXEL_SEEK_TRIGGER
+                    totalPixelMovement -= steps * scaledTrigger
                 }
             }
+
             State.ControlVolume ->
-                sendPropertyChange(PropertyChange.Volume, CONTROL_VOLUME_MAX * (-dy / height))
+                sendPropertyChange(PropertyChange.Volume, CONTROL_VOLUME_MAX * (-diffY / height))
+
             State.ControlBright ->
-                sendPropertyChange(PropertyChange.Bright, CONTROL_BRIGHT_MAX * (-dy / height))
-            State.HoldSpeed -> {}
+                sendPropertyChange(PropertyChange.Bright, CONTROL_BRIGHT_MAX * (-diffY / height))
+
+            else -> {}
         }
+
         return state != State.Up && state != State.Down
     }
+    // ---------------------------------------
 
     private fun sendPropertyChange(p: PropertyChange, diff: Float) {
         observer.onPropertyChange(p, diff)
