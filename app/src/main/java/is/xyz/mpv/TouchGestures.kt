@@ -50,7 +50,7 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     private var lastPos = PointF()
 
     private var totalPixelMovement = 0f
-    private val PIXEL_SEEK_TRIGGER = 12f
+    private val PIXEL_SEEK_TRIGGER = 3000f
     private val MS_PER_SEEK = 80L
 
     private var width = 0f
