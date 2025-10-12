@@ -49,10 +49,9 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     private var initialPos = PointF()
     private var lastPos = PointF()
 
-    // --- Stepwise seek variables ---
-    private var lastSeekPosX = 0f
-    private val PIXEL_SEEK_TRIGGER = 15f   // pixels per seek step
-    private val MS_PER_SEEK = 80f          // milliseconds per step
+    private var totalPixelMovement = 0f
+    private val PIXEL_SEEK_TRIGGER = 15f // pixels per step
+    private val MS_PER_SEEK = 80L        // ms per step
 
     private var width = 0f
     private var height = 0f
@@ -73,7 +72,8 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     }
 
     private inline fun assertFloat(vararg n: Float) {
-        if (!checkFloat(*n)) throw IllegalArgumentException()
+        if (!checkFloat(*n))
+            throw IllegalArgumentException()
     }
 
     private fun isInLeftoverArea(point: PointF): Boolean {
@@ -100,12 +100,14 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
 
     private fun processTap(p: PointF): Boolean {
         if (state == State.HoldSpeed) return false
+
         if (state == State.Up) {
             lastDownTime = SystemClock.uptimeMillis()
             if (PointF(lastPos.x - p.x, lastPos.y - p.y).length() > trigger * 3)
                 lastTapTime = 0
             return true
         }
+
         if (state != State.Down) return false
 
         val now = SystemClock.uptimeMillis()
@@ -128,44 +130,45 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
             else
                 tapGestureCenter?.let { sendPropertyChange(it, 0f); return true }
             lastTapTime = 0
-        } else lastTapTime = now
+        } else {
+            lastTapTime = now
+        }
 
         return false
     }
 
     private fun processMovement(p: PointF): Boolean {
         if (state == State.HoldSpeed) return false
+
+        val dx = p.x - lastPos.x
+        val dy = p.y - lastPos.y
         lastPos.set(p)
-        assertFloat(initialPos.x, initialPos.y)
-        val dx = p.x - initialPos.x
-        val dy = p.y - initialPos.y
 
         when (state) {
             State.Up -> {}
             State.Down -> {
-                if (abs(dx) > trigger) {
+                if (abs(p.x - initialPos.x) > trigger) {
                     state = gestureHoriz
                     stateDirection = 0
-                    lastSeekPosX = initialPos.x // reset stepwise start
-                } else if (abs(dy) > trigger) {
+                } else if (abs(p.y - initialPos.y) > trigger) {
                     state = if (initialPos.x > width / 2) gestureVertRight else gestureVertLeft
                     stateDirection = 1
                 }
-                if (state != State.Down) sendPropertyChange(PropertyChange.Init, 0f)
+                if (state != State.Down)
+                    sendPropertyChange(PropertyChange.Init, 0f)
             }
             State.ControlSeek -> {
-                // Stepwise seek implementation
-                val deltaX = p.x - lastSeekPosX
-                if (abs(deltaX) >= PIXEL_SEEK_TRIGGER) {
-                    val steps = floor(abs(deltaX) / PIXEL_SEEK_TRIGGER)
-                    val seekMs = MS_PER_SEEK * steps * (if (deltaX > 0) 1 else -1)
-                    sendPropertyChange(PropertyChange.Seek, seekMs)
-                    // reset lastSeekPosX to current point after applying seek
-                    lastSeekPosX = lastSeekPosX + steps * PIXEL_SEEK_TRIGGER * (if (deltaX > 0) 1 else -1)
+                totalPixelMovement += dx
+                if (abs(totalPixelMovement) >= PIXEL_SEEK_TRIGGER) {
+                    val jump = if (totalPixelMovement > 0) MS_PER_SEEK.toFloat() else -MS_PER_SEEK.toFloat()
+                    sendPropertyChange(PropertyChange.SeekFixed, jump)
+                    totalPixelMovement = 0f
                 }
             }
-            State.ControlVolume -> sendPropertyChange(PropertyChange.Volume, CONTROL_VOLUME_MAX * (-dy / height))
-            State.ControlBright -> sendPropertyChange(PropertyChange.Bright, CONTROL_BRIGHT_MAX * (-dy / height))
+            State.ControlVolume ->
+                sendPropertyChange(PropertyChange.Volume, (-dy / height) * CONTROL_VOLUME_MAX)
+            State.ControlBright ->
+                sendPropertyChange(PropertyChange.Bright, (-dy / height) * CONTROL_BRIGHT_MAX)
             State.HoldSpeed -> {}
         }
 
@@ -181,7 +184,6 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
             val v = prefs.getString(key, "")
             if (v.isNullOrEmpty()) resources.getString(defaultRes) else v
         }
-
         val map = mapOf(
             "bright" to State.ControlBright,
             "seek" to State.ControlSeek,
@@ -211,8 +213,8 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
             return false
         }
 
-        val point = PointF(e.x, e.y)
         var gestureHandled = false
+        val point = PointF(e.x, e.y)
 
         when (e.action) {
             MotionEvent.ACTION_UP -> {
@@ -220,26 +222,38 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
                     sendPropertyChange(PropertyChange.HoldSpeedEnd, 0f)
                     state = State.Up
                     holdStartTime = 0
+                    totalPixelMovement = 0f
                     return true
                 }
 
                 gestureHandled = processMovement(point) or processTap(point)
-                if (state != State.Down) sendPropertyChange(PropertyChange.Finalize, 0f)
+                if (state != State.Down)
+                    sendPropertyChange(PropertyChange.Finalize, 0f)
+
                 state = State.Up
                 holdStartTime = 0
+                totalPixelMovement = 0f
             }
+
             MotionEvent.ACTION_DOWN -> {
-                if (e.y < height * DEADZONE / 100 || e.y > height * (100 - DEADZONE) / 100) return false
+                if (e.y < height * DEADZONE / 100 || e.y > height * (100 - DEADZONE) / 100)
+                    return false
+
                 initialPos.set(point)
-                lastPos.set(point)
                 processTap(point)
+                lastPos.set(point)
                 state = State.Down
 
-                if (isInLeftoverArea(point)) holdStartTime = SystemClock.uptimeMillis()
+                if (isInLeftoverArea(point)) {
+                    holdStartTime = SystemClock.uptimeMillis()
+                }
+
                 gestureHandled = true
             }
+
             MotionEvent.ACTION_MOVE -> {
                 if (state == State.HoldSpeed) return true
+
                 gestureHandled = processMovement(point)
 
                 if (state == State.Down && holdStartTime > 0) {
