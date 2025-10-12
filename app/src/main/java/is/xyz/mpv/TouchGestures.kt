@@ -50,8 +50,8 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     private var lastPos = PointF()
 
     private var totalPixelMovement = 0f
-    private val PIXEL_SEEK_TRIGGER = 3000f
-    private val MS_PER_SEEK = 80L
+    private val PIXEL_SEEK_TRIGGER = 120f   // lower = more sensitive, higher = slower
+    private val MS_PER_SEEK = 80L           // ms jump per seek step
 
     private var width = 0f
     private var height = 0f
@@ -70,6 +70,7 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     private inline fun checkFloat(vararg n: Float): Boolean {
         return !n.any { it.isInfinite() || it.isNaN() }
     }
+
     private inline fun assertFloat(vararg n: Float) {
         if (!checkFloat(*n))
             throw IllegalArgumentException()
@@ -139,8 +140,8 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         if (state == State.HoldSpeed) return false
 
         lastPos.set(p)
-
         assertFloat(initialPos.x, initialPos.y)
+
         val dx = p.x - initialPos.x
         val dy = p.y - initialPos.y
 
@@ -160,8 +161,9 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
             State.ControlSeek -> {
                 totalPixelMovement += dx
                 if (abs(totalPixelMovement) >= PIXEL_SEEK_TRIGGER) {
-                    val steps = (totalPixelMovement / PIXEL_SEEK_TRIGGER).toInt()
-                    sendPropertyChange(PropertyChange.Seek, steps * MS_PER_SEEK.toFloat())
+                    val steps = (totalPixelMovement / PIXEL_SEEK_TRIGGER).coerceIn(-5f, 5f)
+                    val seekMs = steps * MS_PER_SEEK
+                    sendPropertyChange(PropertyChange.Seek, seekMs)
                     totalPixelMovement -= steps * PIXEL_SEEK_TRIGGER
                 }
             }
@@ -183,11 +185,13 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
             val v = prefs.getString(key, "")
             if (v.isNullOrEmpty()) resources.getString(defaultRes) else v
         }
+
         val map = mapOf(
             "bright" to State.ControlBright,
             "seek" to State.ControlSeek,
             "volume" to State.ControlVolume
         )
+
         val map2 = mapOf(
             "seek" to PropertyChange.SeekFixed,
             "playpause" to PropertyChange.PlayPause,
@@ -211,8 +215,10 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
             Log.w(TAG, "TouchGestures: ignoring invalid point ${e.x} ${e.y}")
             return false
         }
+
         var gestureHandled = false
         val point = PointF(e.x, e.y)
+
         when (e.action) {
             MotionEvent.ACTION_UP -> {
                 if (state == State.HoldSpeed) {
@@ -230,6 +236,7 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
                 holdStartTime = 0
                 totalPixelMovement = 0f
             }
+
             MotionEvent.ACTION_DOWN -> {
                 if (e.y < height * DEADZONE / 100 || e.y > height * (100 - DEADZONE) / 100)
                     return false
@@ -244,10 +251,9 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
 
                 gestureHandled = true
             }
+
             MotionEvent.ACTION_MOVE -> {
-                if (state == State.HoldSpeed) {
-                    return true
-                }
+                if (state == State.HoldSpeed) return true
 
                 gestureHandled = processMovement(point)
 
@@ -261,6 +267,7 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
                 }
             }
         }
+
         return gestureHandled
     }
 }
