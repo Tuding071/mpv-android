@@ -48,11 +48,11 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
 
     private var initialPos = PointF()
     private var lastPos = PointF()
+    private var lastSeekPos = 0f   // new checkpoint for discrete seeking
 
-    // sensitivity + movement accumulator
-    private var totalPixelMovement = 0f
-    private val PIXEL_SEEK_TRIGGER = 180f   // lower = more sensitive, higher = slower
-    private val MS_PER_SEEK = 80L           // ms jump per seek step
+    // Sensitivity configuration
+    private val PIXEL_SEEK_TRIGGER = 120f   // every 120px triggers one seek step
+    private val MS_PER_SEEK = 80L           // milliseconds per seek step
 
     private var width = 0f
     private var height = 0f
@@ -64,9 +64,9 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     private var gestureHoriz = State.Down
     private var gestureVertLeft = State.Down
     private var gestureVertRight = State.Down
-    private var tapGestureLeft: PropertyChange? = null
-    private var tapGestureCenter: PropertyChange? = null
-    private var tapGestureRight: PropertyChange? = null
+    private var tapGestureLeft : PropertyChange? = null
+    private var tapGestureCenter : PropertyChange? = null
+    private var tapGestureRight : PropertyChange? = null
 
     private inline fun checkFloat(vararg n: Float): Boolean {
         return !n.any { it.isInfinite() || it.isNaN() }
@@ -137,61 +137,49 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         return false
     }
 
-    // --- improved smooth seeking logic ---
     private fun processMovement(p: PointF): Boolean {
         if (state == State.HoldSpeed) return false
 
-        val diffX = p.x - lastPos.x
-        val diffY = p.y - lastPos.y
         lastPos.set(p)
+        assertFloat(initialPos.x, initialPos.y)
+
+        val dx = p.x - initialPos.x
+        val dy = p.y - initialPos.y
 
         when (state) {
-            State.Up -> return false
-
+            State.Up -> {}
             State.Down -> {
-                val dx = p.x - initialPos.x
-                val dy = p.y - initialPos.y
-
                 if (abs(dx) > trigger) {
                     state = gestureHoriz
                     stateDirection = 0
-                    totalPixelMovement = 0f   // reset on new seek start
-                    sendPropertyChange(PropertyChange.Init, 0f)
+                    lastSeekPos = p.x   // initialize checkpoint when starting to seek
                 } else if (abs(dy) > trigger) {
                     state = if (initialPos.x > width / 2) gestureVertRight else gestureVertLeft
                     stateDirection = 1
-                    sendPropertyChange(PropertyChange.Init, 0f)
                 }
+                if (state != State.Down)
+                    sendPropertyChange(PropertyChange.Init, 0f)
             }
 
             State.ControlSeek -> {
-                totalPixelMovement += diffX
-                totalPixelMovement = totalPixelMovement.coerceIn(-2400f, 2400f)
-
-                // smooth dynamic scaling — faster swipes a bit stronger
-                val scaledTrigger = PIXEL_SEEK_TRIGGER * (1f - (abs(diffX) / width).coerceIn(0f, 0.8f) * 0.6f)
-
-                if (abs(totalPixelMovement) >= scaledTrigger) {
-                    val steps = (totalPixelMovement / scaledTrigger)
-                        .coerceIn(-5f, 5f)
-                    val seekMs = steps * MS_PER_SEEK
+                val distance = p.x - lastSeekPos
+                if (abs(distance) >= PIXEL_SEEK_TRIGGER) {
+                    val direction = if (distance > 0) 1 else -1
+                    val seekMs = direction * MS_PER_SEEK
                     sendPropertyChange(PropertyChange.Seek, seekMs)
-                    totalPixelMovement -= steps * scaledTrigger
+                    lastSeekPos = p.x // reset checkpoint every trigger
                 }
             }
 
             State.ControlVolume ->
-                sendPropertyChange(PropertyChange.Volume, CONTROL_VOLUME_MAX * (-diffY / height))
-
+                sendPropertyChange(PropertyChange.Volume, CONTROL_VOLUME_MAX * (-dy / height))
             State.ControlBright ->
-                sendPropertyChange(PropertyChange.Bright, CONTROL_BRIGHT_MAX * (-diffY / height))
-
-            else -> {}
+                sendPropertyChange(PropertyChange.Bright, CONTROL_BRIGHT_MAX * (-dy / height))
+            State.HoldSpeed -> {}
         }
 
         return state != State.Up && state != State.Down
     }
-    // ---------------------------------------
 
     private fun sendPropertyChange(p: PropertyChange, diff: Float) {
         observer.onPropertyChange(p, diff)
@@ -242,7 +230,6 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
                     sendPropertyChange(PropertyChange.HoldSpeedEnd, 0f)
                     state = State.Up
                     holdStartTime = 0
-                    totalPixelMovement = 0f
                     return true
                 }
 
@@ -251,7 +238,6 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
                     sendPropertyChange(PropertyChange.Finalize, 0f)
                 state = State.Up
                 holdStartTime = 0
-                totalPixelMovement = 0f
             }
 
             MotionEvent.ACTION_DOWN -> {
@@ -260,6 +246,7 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
                 initialPos.set(point)
                 processTap(point)
                 lastPos.set(point)
+                lastSeekPos = point.x   // reset seek checkpoint on new touch
                 state = State.Down
 
                 if (isInLeftoverArea(point)) {
