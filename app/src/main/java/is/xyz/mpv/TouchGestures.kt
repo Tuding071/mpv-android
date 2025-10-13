@@ -10,13 +10,13 @@ import kotlin.math.*
 
 enum class PropertyChange {
     Init,
-    Seek,
+    Seek, // Used here to signal the start of a Seek gesture (for pause)
     Volume,
     Bright,
     Finalize,
 
     /* Tap gestures */
-    SeekFixed, // Used for the new fixed-step seek logic
+    SeekFixed, // Used for the actual fixed-step seeking by 80ms
     PlayPause,
     Custom,
     
@@ -34,7 +34,7 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     private enum class State {
         Up,
         Down,
-        ControlSeek, // Now handles the fixed-step seek
+        ControlSeek,
         ControlVolume,
         ControlBright,
         HoldSpeed,
@@ -106,7 +106,7 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         private const val TAP_DURATION = 300L
 
         // full sweep from left side to right side is 2:30
-        private const val CONTROL_SEEK_MAX = 30f // No longer used for ControlSeek
+        private const val CONTROL_SEEK_MAX = 30f // Retained for compatibility but unused by ControlSeek state
 
         // same as below, we rescale it inside MPVActivity
         private const val CONTROL_VOLUME_MAX = 1.5f
@@ -187,9 +187,15 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
                     state = if (initialPos.x > width / 2) gestureVertRight else gestureVertLeft
                     stateDirection = 1
                 }
-                // send Init so that it has a chance to cache values before we start modifying them
-                if (state != State.Down)
+                
+                if (state != State.Down) {
                     sendPropertyChange(PropertyChange.Init, 0f)
+                    // If the gesture is a horizontal seek, send the Seek property
+                    // This is what typically triggers the player pause/HUD
+                    if (state == State.ControlSeek) {
+                        sendPropertyChange(PropertyChange.Seek, 0f)
+                    }
+                }
             }
             State.ControlSeek -> {
                 // 1. Accumulate movement
@@ -209,7 +215,6 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
                     sendPropertyChange(PropertyChange.SeekFixed, diff)
 
                     // 5. Consume the 12px step from the accumulator
-                    // This is the core logic for the non-cooldown, fixed-step seek
                     totalPixelMovement -= direction * PIXEL_SEEK_TRIGGER
                 }
             }
@@ -276,6 +281,7 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
                 }
                 
                 gestureHandled = processMovement(point) or processTap(point)
+                // Sending Finalize signals the end of the gesture, triggering resume/HUD hide
                 if (state != State.Down)
                     sendPropertyChange(PropertyChange.Finalize, 0f)
                 state = State.Up
@@ -290,7 +296,7 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
                 lastPos.set(point)
                 state = State.Down
                 
-                // IMPORTANT: Reset the pixel accumulator for the new gesture
+                // Reset the pixel accumulator for the new gesture
                 totalPixelMovement = 0f
                 
                 if (isInLeftoverArea(point)) {
