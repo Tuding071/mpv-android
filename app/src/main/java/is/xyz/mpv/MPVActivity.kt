@@ -134,6 +134,11 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
             binding.controls.animate().alpha(0f).setDuration(CONTROLS_FADE_DURATION).setListener(listener)
         }
     }
+    
+    // --- Custom seeking control ---
+    private var isSeeking = false
+    private var basePos = 0.0
+    private val PIXEL_TO_SEC = 0.08 // each pixel = 80ms, adjust if needed
 
     // Fade out unlock button
     private val fadeRunnable2 = object : Runnable {
@@ -1933,48 +1938,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         fadeHandler.postDelayed(fadeRunnable3, 500L)
     }
 
-    override fun onPropertyChange(p: PropertyChange, diff: Float) {
-    val gestureTextView = binding.gestureTextView
-    when (p) {
-        /* Drag gestures */
-        PropertyChange.Init -> {
-            mightWantToToggleControls = false
-
-            initialSeek = (psc.position / 1000f)
-            initialBright = Utils.getScreenBrightness(this) ?: 0.5f
-            with (audioManager!!) {
-                initialVolume = getStreamVolume(STREAM_TYPE)
-                maxVolume = if (isVolumeFixed)
-                    0
-                else
-                    getStreamMaxVolume(STREAM_TYPE)
-            }
-            if (!isPlayingAudio)
-                maxVolume = 0 // disallow volume gesture if no audio
-            pausedForSeek = 0
-
-            fadeHandler.removeCallbacks(fadeRunnable3)
-            gestureTextView.visibility = View.VISIBLE
-            gestureTextView.text = ""
-        }
-        PropertyChange.Seek -> {
-    val duration = (psc.duration / 1000f)
-    if (duration == 0f || initialSeek < 0) return
     
-    // Universal pause (keep this)
-    if (pausedForSeek == 0) {
-        pausedForSeek = if (psc.pause) 2 else 1
-        if (pausedForSeek == 1) player.paused = true
-    }
-
-    val newPosExact = (initialSeek + diff).coerceIn(0f, duration)
-    
-    // NO THROTTLE - just normal seeking
-    if (smoothSeekGesture) {
-        player.timePos = newPosExact.toDouble()
-    } else {
-        MPVLib.command(arrayOf("seek", "$newPosExact", "absolute+keyframes"))
-    }
 
     // UI updates
     val newPos = newPosExact.roundToInt()
@@ -1987,7 +1951,78 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
             if (maxVolume == 0)
                 return
             val newVolume = (initialVolume + (diff * maxVolume).toInt()).coerceIn(0, maxVolume)
-            val newVolumePercent = 100 * newVolume / maxVolume
+            override fun onPropertyChange(p: PropertyChange, diff: Float) {
+    val gestureTextView = binding.gestureTextView
+    when (p) {
+
+        /* --- Drag gestures --- */
+        PropertyChange.Init -> {
+            mightWantToToggleControls = false
+
+            basePos = psc.position / 1000.0  // base position in seconds
+            initialBright = Utils.getScreenBrightness(this) ?: 0.5f
+            with(audioManager!!) {
+                initialVolume = getStreamVolume(STREAM_TYPE)
+                maxVolume = if (isVolumeFixed) 0 else getStreamMaxVolume(STREAM_TYPE)
+            }
+            if (!isPlayingAudio) maxVolume = 0 // disallow volume gesture if no audio
+            pausedForSeek = 0
+
+            fadeHandler.removeCallbacks(fadeRunnable3)
+            gestureTextView.visibility = View.VISIBLE
+            gestureTextView.text = ""
+        }
+
+        PropertyChange.Seek -> {
+            val duration = (psc.duration / 1000f).toDouble()
+            if (duration == 0.0 || basePos < 0) return
+
+            // --- universal pause ---
+            if (pausedForSeek == 0) {
+                pausedForSeek = if (psc.pause) 2 else 1
+                if (pausedForSeek == 1) player.paused = true
+            }
+
+            // --- PIXEL TO TIME mapping ---
+            // diff comes from TouchGestures in pixels
+            // 12 pixels = 80ms → 1 pixel = 0.08s
+            val PIXEL_TO_SEC = 0.08  // <-- edit this if you want to change sensitivity
+            val newPos = (basePos + diff * PIXEL_TO_SEC).coerceIn(0.0, duration)
+
+            // --- apply directly to player ---
+            if (smoothSeekGesture) {
+                player.timePos = newPos
+            } else {
+                MPVLib.command(arrayOf("seek", "$newPos", "absolute+keyframes"))
+            }
+
+            // --- optional gesture feedback ---
+            gestureTextView.text = String.format("%s / %s",
+                Utils.formatTime(newPos.toFloat()),
+                Utils.formatTime(duration.toFloat()))
+        }
+
+        PropertyChange.Finalize -> {
+            // resume if we paused for seeking
+            if (pausedForSeek == 1) player.paused = false
+            pausedForSeek = 0
+            gestureTextView.visibility = View.GONE
+        }
+
+        /* --- Other gestures (play/pause, volume, brightness) --- */
+        PropertyChange.PlayPause -> {
+            if (player.paused) player.paused = false else player.paused = true
+        }
+        PropertyChange.Volume -> {
+            val volume = (initialVolume + diff * maxVolume).toInt().coerceIn(0, maxVolume)
+            audioManager?.setStreamVolume(STREAM_TYPE, volume, 0)
+        }
+        PropertyChange.Bright -> {
+            val newBright = (initialBright + diff * CONTROL_BRIGHT_MAX).coerceIn(0f, 1f)
+            Utils.setScreenBrightness(this, newBright)
+        }
+    }
+}           val newVolumePercent = 100 * newVolume / maxVolume
             audioManager!!.setStreamVolume(STREAM_TYPE, newVolume, 0)
 
             gestureTextView.text = getString(R.string.ui_volume, newVolumePercent)
