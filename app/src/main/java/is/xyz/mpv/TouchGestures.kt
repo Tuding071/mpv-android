@@ -16,10 +16,10 @@ enum class PropertyChange {
     Finalize,
 
     /* Tap gestures */
-    SeekFixed,
+    SeekFixed, // Used for the new fixed-step seek logic
     PlayPause,
     Custom,
-
+    
     /* Hold gestures */
     HoldSpeedStart,
     HoldSpeedEnd,
@@ -34,52 +34,58 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     private enum class State {
         Up,
         Down,
-        ControlSeek,
+        ControlSeek, // Now handles the fixed-step seek
         ControlVolume,
         ControlBright,
         HoldSpeed,
     }
 
     private var state = State.Up
+    // relevant movement direction for the current state (0=H, 1=V)
     private var stateDirection = 0
 
+    // timestamp of the last tap (ACTION_UP)
     private var lastTapTime = 0L
+    // when the current gesture began
     private var lastDownTime = 0L
 
+    // where user initially placed their finger (ACTION_DOWN)
     private var initialPos = PointF()
+    // last non-throttled processed position
     private var lastPos = PointF()
 
     private var totalPixelMovement = 0f
-    private val PIXEL_SEEK_TRIGGER = 15f // pixels per step
-    private val MS_PER_SEEK = 80L        // ms per step
+    private val PIXEL_SEEK_TRIGGER = 12f
+    private val MS_PER_SEEK = 80L
 
     private var width = 0f
     private var height = 0f
+    // minimum movement which triggers a Control state
     private var trigger = 0f
 
+    // Hold gesture variables
     private var holdStartTime = 0L
-    private val HOLD_DURATION = 200L
+    private val HOLD_DURATION = 200L // milliseconds to trigger hold
 
+    // which property change should be invoked where
     private var gestureHoriz = State.Down
     private var gestureVertLeft = State.Down
     private var gestureVertRight = State.Down
-    private var tapGestureLeft: PropertyChange? = null
-    private var tapGestureCenter: PropertyChange? = null
-    private var tapGestureRight: PropertyChange? = null
+    private var tapGestureLeft : PropertyChange? = null
+    private var tapGestureCenter : PropertyChange? = null
+    private var tapGestureRight : PropertyChange? = null
 
     private inline fun checkFloat(vararg n: Float): Boolean {
         return !n.any { it.isInfinite() || it.isNaN() }
     }
-
     private inline fun assertFloat(vararg n: Float) {
         if (!checkFloat(*n))
             throw IllegalArgumentException()
     }
 
     private fun isInLeftoverArea(point: PointF): Boolean {
-        val inCenterZone =
-            point.x >= width * 0.25f && point.x <= width * 0.75f && point.y <= height * 0.70f
-        return !inCenterZone
+        val inCenterZone = point.x >= width * 0.25f && point.x <= width * 0.75f && point.y <= height * 0.70f
+        return !inCenterZone // True if in leftover areas
     }
 
     fun setMetrics(width: Float, height: Float) {
@@ -91,10 +97,26 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
 
     companion object {
         private const val TAG = "mpv"
+
+        // ratio for trigger, 1/Xth of minimum dimension
+        // for tap gestures this is the distance that must *not* be moved for it to trigger
         private const val TRIGGER_RATE = 30
+
+        // maximum duration between taps (ms) for a double tap to count
         private const val TAP_DURATION = 300L
+
+        // full sweep from left side to right side is 2:30
+        private const val CONTROL_SEEK_MAX = 30f // No longer used for ControlSeek
+
+        // same as below, we rescale it inside MPVActivity
         private const val CONTROL_VOLUME_MAX = 1.5f
+
+        // brightness is scaled 0..1; max's not 1f so that user does not have to start from the bottom
+        // if they want to go from none to full brightness
         private const val CONTROL_BRIGHT_MAX = 1.5f
+
+        // do not trigger on X% of screen top/bottom
+        // this is so that user can open android status bar
         private const val DEADZONE = 5
     }
 
@@ -103,26 +125,30 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
 
         if (state == State.Up) {
             lastDownTime = SystemClock.uptimeMillis()
+            // 3 is another arbitrary value here that seems good enough
             if (PointF(lastPos.x - p.x, lastPos.y - p.y).length() > trigger * 3)
-                lastTapTime = 0
+                lastTapTime = 0 // last tap was too far away, invalidate
             return true
         }
-
-        if (state != State.Down) return false
+        // discard if any movement gesture took place
+        if (state != State.Down)
+            return false
 
         val now = SystemClock.uptimeMillis()
         if (now - lastDownTime >= TAP_DURATION) {
-            lastTapTime = 0
+            lastTapTime = 0 // finger was held too long, reset
             return false
         }
-
+        
+        // SINGLE TAP - Add play/pause in center area
         if (p.x >= width * 0.25f && p.x <= width * 0.75f && p.y <= height * 0.70f) {
             sendPropertyChange(PropertyChange.PlayPause, 0f)
             lastTapTime = 0
             return true
         }
-
+        
         if (now - lastTapTime < TAP_DURATION) {
+            // [ Left 28% ] [    Center    ] [ Right 28% ]
             if (p.x <= width * 0.28f)
                 tapGestureLeft?.let { sendPropertyChange(it, -1f); return true }
             else if (p.x >= width * 0.72f)
@@ -133,44 +159,69 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         } else {
             lastTapTime = now
         }
-
         return false
     }
 
     private fun processMovement(p: PointF): Boolean {
         if (state == State.HoldSpeed) return false
-
-        val dx = p.x - lastPos.x
-        val dy = p.y - lastPos.y
-        lastPos.set(p)
+        
+        // Calculate movement difference since last point
+        val dx_step = p.x - lastPos.x
+        
+        // Use total movement from initialPos only for state transition
+        assertFloat(initialPos.x, initialPos.y)
+        val dx_total = p.x - initialPos.x
+        val dy = p.y - initialPos.y
+        
+        // dr is for ratio-based controls (Volume/Bright)
+        val dr = if (stateDirection == 0) (dx_total / width) else (-dy / height)
 
         when (state) {
             State.Up -> {}
             State.Down -> {
-                if (abs(p.x - initialPos.x) > trigger) {
+                // we might get into one of Control states if user moves enough
+                if (abs(dx_total) > trigger) {
                     state = gestureHoriz
                     stateDirection = 0
-                } else if (abs(p.y - initialPos.y) > trigger) {
+                } else if (abs(dy) > trigger) {
                     state = if (initialPos.x > width / 2) gestureVertRight else gestureVertLeft
                     stateDirection = 1
                 }
+                // send Init so that it has a chance to cache values before we start modifying them
                 if (state != State.Down)
                     sendPropertyChange(PropertyChange.Init, 0f)
             }
             State.ControlSeek -> {
-                totalPixelMovement += dx
-                if (abs(totalPixelMovement) >= PIXEL_SEEK_TRIGGER) {
-                    val jump = if (totalPixelMovement > 0) MS_PER_SEEK.toFloat() else -MS_PER_SEEK.toFloat()
-                    sendPropertyChange(PropertyChange.SeekFixed, jump)
-                    totalPixelMovement = 0f
+                // 1. Accumulate movement
+                totalPixelMovement += dx_step
+                
+                // Seek amount: 80ms converted to seconds
+                val seekAmount = MS_PER_SEEK / 1000f // 0.08f
+                
+                // 2. Loop to handle multiple 12px steps within one frame
+                while (abs(totalPixelMovement) >= PIXEL_SEEK_TRIGGER) {
+                    
+                    // 3. Determine direction (1.0 for right, -1.0 for left)
+                    val direction = sign(totalPixelMovement) 
+                    
+                    // 4. Send the FIXED seek step (0.08s or -0.08s)
+                    val diff = direction * seekAmount
+                    sendPropertyChange(PropertyChange.SeekFixed, diff)
+
+                    // 5. Consume the 12px step from the accumulator
+                    // This is the core logic for the non-cooldown, fixed-step seek
+                    totalPixelMovement -= direction * PIXEL_SEEK_TRIGGER
                 }
             }
             State.ControlVolume ->
-                sendPropertyChange(PropertyChange.Volume, (-dy / height) * CONTROL_VOLUME_MAX)
+                sendPropertyChange(PropertyChange.Volume, CONTROL_VOLUME_MAX * dr)
             State.ControlBright ->
-                sendPropertyChange(PropertyChange.Bright, (-dy / height) * CONTROL_BRIGHT_MAX)
+                sendPropertyChange(PropertyChange.Bright, CONTROL_BRIGHT_MAX * dr)
             State.HoldSpeed -> {}
         }
+        
+        // Update lastPos after all calculations, for the next event's dx_step
+        lastPos.set(p)
 
         return state != State.Up && state != State.Down
     }
@@ -195,6 +246,7 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
             "custom" to PropertyChange.Custom
         )
 
+        // Note: R.string references are used as-is, assuming they exist in the Android environment.
         gestureHoriz = map[get("gesture_horiz", R.string.pref_gesture_horiz_default)] ?: State.Down
         gestureVertLeft = map[get("gesture_vert_left", R.string.pref_gesture_vert_left_default)] ?: State.Down
         gestureVertRight = map[get("gesture_vert_right", R.string.pref_gesture_vert_right_default)] ?: State.Down
@@ -212,50 +264,49 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
             Log.w(TAG, "TouchGestures: ignoring invalid point ${e.x} ${e.y}")
             return false
         }
-
         var gestureHandled = false
         val point = PointF(e.x, e.y)
-
         when (e.action) {
             MotionEvent.ACTION_UP -> {
                 if (state == State.HoldSpeed) {
                     sendPropertyChange(PropertyChange.HoldSpeedEnd, 0f)
                     state = State.Up
                     holdStartTime = 0
-                    totalPixelMovement = 0f
                     return true
                 }
-
+                
                 gestureHandled = processMovement(point) or processTap(point)
                 if (state != State.Down)
                     sendPropertyChange(PropertyChange.Finalize, 0f)
-
                 state = State.Up
                 holdStartTime = 0
-                totalPixelMovement = 0f
             }
-
             MotionEvent.ACTION_DOWN -> {
+                // deadzone on top/bottom
                 if (e.y < height * DEADZONE / 100 || e.y > height * (100 - DEADZONE) / 100)
                     return false
-
                 initialPos.set(point)
                 processTap(point)
                 lastPos.set(point)
                 state = State.Down
-
+                
+                // IMPORTANT: Reset the pixel accumulator for the new gesture
+                totalPixelMovement = 0f
+                
                 if (isInLeftoverArea(point)) {
                     holdStartTime = SystemClock.uptimeMillis()
                 }
-
+                
+                // always return true on ACTION_DOWN to continue receiving events
                 gestureHandled = true
             }
-
             MotionEvent.ACTION_MOVE -> {
-                if (state == State.HoldSpeed) return true
-
+                if (state == State.HoldSpeed) {
+                    return true
+                }
+                
                 gestureHandled = processMovement(point)
-
+                
                 if (state == State.Down && holdStartTime > 0) {
                     val holdTime = SystemClock.uptimeMillis() - holdStartTime
                     if (holdTime >= HOLD_DURATION && isInLeftoverArea(point)) {
@@ -266,7 +317,6 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
                 }
             }
         }
-
         return gestureHandled
     }
 }
