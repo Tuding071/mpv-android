@@ -54,10 +54,6 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     // last non-throttled processed position
     private var lastPos = PointF()
 
-    private var totalPixelMovement = 0f
-    private val PIXEL_SEEK_TRIGGER = 12f
-    private val MS_PER_SEEK = 80L
-
     private var width = 0f
     private var height = 0f
     // minimum movement which triggers a Control state
@@ -106,7 +102,7 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         private const val TAP_DURATION = 300L
 
         // full sweep from left side to right side is 2:30
-        private const val CONTROL_SEEK_MAX = 30f
+        private const val CONTROL_SEEK_MAX = 15f
 
         // same as below, we rescale it inside MPVActivity
         private const val CONTROL_VOLUME_MAX = 1.5f
