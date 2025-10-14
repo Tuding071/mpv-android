@@ -24,10 +24,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake meson ninja-build yasm nasm gettext python3 git unzip
 
-      - name: Set up Android NDK (r26d)
+      - name: Set up Android NDK (r23c)
         uses: nttld/setup-ndk@v1
         with:
-          ndk-version: r26d
+          ndk-version: 23.1.7779620
 
       - name: Give execute permissions
         run: chmod +x buildscripts/*.sh buildscripts/include/*.sh buildscripts/scripts/*.sh
@@ -52,7 +52,7 @@ jobs:
       - name: Build unsigned release APK
         run: |
           set -x
-          ./gradlew assembleRelease | tee build_error_log.txt
+          ./gradlew clean assembleRelease | tee build_error_log.txt
 
       - name: Locate unsigned APK
         id: locate_apk
