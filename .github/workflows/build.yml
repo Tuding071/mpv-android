@@ -1,4 +1,4 @@
-name: Build mpv-android (arm64 only)
+name: Build mpv-android (arm64 Release)
 
 on:
   workflow_dispatch:
@@ -50,16 +50,16 @@ jobs:
           mkdir -p app/src/main/jniLibs/arm64-v8a
           cp -v buildscripts/prefix/arm64/usr/local/lib/*.so app/src/main/jniLibs/arm64-v8a/ || true
 
-      - name: Build APK
+      - name: Build Release APK
         run: |
           set -x
-          ./gradlew assembleDebug | tee build_error_log.txt
+          ./gradlew assembleRelease | tee build_error_log.txt
 
-      - name: Upload ARM64 Default Debug APK only
+      - name: Upload ARM64 Release APK only
         uses: actions/upload-artifact@v4
         with:
-          name: mpv-android-arm64-debug
-          path: app/build/outputs/apk/default/debug/app-default-arm64-v8a-debug.apk
+          name: mpv-android-arm64-release
+          path: app/build/outputs/apk/default/release/app-default-arm64-v8a-release.apk
 
       - name: Upload build logs
         uses: actions/upload-artifact@v4
