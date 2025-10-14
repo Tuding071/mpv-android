@@ -22,10 +22,10 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake meson ninja-build yasm nasm gettext python3 git unzip
+          sudo apt-get install -y cmake meson ninja-build yasm nasm gettext python3 git unzip wget
 
       - name: Set up Android NDK (r23c)
-        uses: nttld/setup-ndk@v1
+        uses: android-actions/setup-ndk@v3
         with:
           ndk-version: 23.1.7779620
 
