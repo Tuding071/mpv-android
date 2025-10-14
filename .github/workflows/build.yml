@@ -24,10 +24,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake meson ninja-build yasm nasm gettext python3 git unzip wget
 
-      - name: Set up Android NDK (r23c)
-        uses: android-actions/setup-ndk@v3
-        with:
-          ndk-version: 23.1.7779620
+      - name: Download Android NDK r23c
+        run: |
+          wget https://dl.google.com/android/repository/android-ndk-r23c-linux.zip -O ndk.zip
+          unzip -q ndk.zip -d $HOME/android-ndk
+          echo "ANDROID_NDK=$HOME/android-ndk/android-ndk-r23c" >> $GITHUB_ENV
+          echo "NDK downloaded to $HOME/android-ndk/android-ndk-r23c"
 
       - name: Give execute permissions
         run: chmod +x buildscripts/*.sh buildscripts/include/*.sh buildscripts/scripts/*.sh
@@ -43,11 +45,6 @@ jobs:
           cd buildscripts
           ./buildall.sh --arch arm64
           cd ..
-
-      - name: Copy native libraries into jniLibs
-        run: |
-          mkdir -p app/src/main/jniLibs/arm64-v8a
-          cp -v buildscripts/prefix/arm64/usr/local/lib/*.so app/src/main/jniLibs/arm64-v8a/ || true
 
       - name: Build unsigned release APK
         run: |
