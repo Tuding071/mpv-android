@@ -61,7 +61,6 @@ jobs:
           echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
           echo "Found APK: $APK_PATH"
 
-      # Create a temporary test keystore
       - name: Create test keystore
         run: |
           keytool -genkeypair \
@@ -73,11 +72,18 @@ jobs:
             -alias mpvkey \
             -storepass android \
             -keypass android \
-            -dname "CN=mpv, OU=Dev, O=mpv, L=Internet, S=World, C=US"
+            -dname "CN=mpv, OU=Dev, O=mpv, L=Internet, ST=World, C=US"
+
+      - name: Find apksigner path
+        id: apksigner
+        run: |
+          APK_SIGNER_PATH=$(find $ANDROID_HOME/build-tools -name apksigner | sort | tail -n 1)
+          echo "apksigner_path=$APK_SIGNER_PATH" >> $GITHUB_OUTPUT
+          echo "Found apksigner at: $APK_SIGNER_PATH"
 
       - name: Sign APK
         run: |
-          $ANDROID_HOME/build-tools/*/apksigner sign \
+          "${{ steps.apksigner.outputs.apksigner_path }}" sign \
             --ks test-release-key.jks \
             --ks-pass pass:android \
             --key-pass pass:android \
@@ -86,7 +92,8 @@ jobs:
             "${{ steps.locate_apk.outputs.apk_path }}"
 
       - name: Verify signed APK
-        run: $ANDROID_HOME/build-tools/*/apksigner verify --verbose --print-certs signed-release.apk
+        run: |
+          "${{ steps.apksigner.outputs.apksigner_path }}" verify --verbose --print-certs signed-release.apk
 
       - name: Upload signed ARM64 release
         uses: actions/upload-artifact@v4
