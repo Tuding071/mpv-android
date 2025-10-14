@@ -55,11 +55,16 @@ jobs:
           set -x
           ./gradlew assembleRelease | tee build_error_log.txt
 
-      - name: Upload ARM64 Release APK only
+      - name: Show all generated APKs (debug step)
+        run: |
+          echo "=== APKs found under app/build/outputs/apk ==="
+          find app/build/outputs/apk -type f || echo "No APKs found."
+
+      - name: Upload ARM64 Release APK
         uses: actions/upload-artifact@v4
         with:
           name: mpv-android-arm64-release
-          path: app/build/outputs/apk/default/release/app-default-arm64-v8a-release.apk
+          path: app/build/outputs/apk/release/app-release.apk
 
       - name: Upload build logs
         uses: actions/upload-artifact@v4
