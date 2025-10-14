@@ -22,7 +22,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake meson ninja-build yasm nasm gettext python3 git unzip
+          sudo apt-get install -y cmake meson ninja-build yasm nasm gettext python3 git unzip tree
 
       - name: Set up Android NDK (r26d)
         uses: nttld/setup-ndk@v1
@@ -55,16 +55,17 @@ jobs:
           set -x
           ./gradlew assembleRelease | tee build_error_log.txt
 
-      - name: Show all generated APKs (debug step)
+      - name: Scan and show build output directory tree
         run: |
-          echo "=== APKs found under app/build/outputs/apk ==="
-          find app/build/outputs/apk -type f || echo "No APKs found."
+          echo "=== Directory tree of app/build/outputs ==="
+          tree app/build/outputs || (echo "Tree not available, using find:" && find app/build/outputs -type f)
+          echo "=========================================="
 
       - name: Upload ARM64 Release APK
         uses: actions/upload-artifact@v4
         with:
           name: mpv-android-arm64-release
-          path: app/build/outputs/apk/release/app-release.apk
+          path: app/build/outputs/apk/api29/release/app-api29-arm64-v8a-release-unsigned.apk
 
       - name: Upload build logs
         uses: actions/upload-artifact@v4
